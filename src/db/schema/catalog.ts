@@ -18,7 +18,9 @@ export const suppliers = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('suppliers_org_idx').on(t.organizationId)]
+  (t) => ({
+    suppliersOrgIdx: index('suppliers_org_idx').on(t.organizationId),
+  })
 );
 
 export const ingredients = pgTable(
@@ -42,10 +44,10 @@ export const ingredients = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('ingredients_org_sku_uidx').on(t.organizationId, t.sku),
-    index('ingredients_org_name_idx').on(t.organizationId, t.name),
-  ]
+  (t) => ({
+    ingredientsOrgSkuUidx: uniqueIndex('ingredients_org_sku_uidx').on(t.organizationId, t.sku),
+    ingredientsOrgNameIdx: index('ingredients_org_name_idx').on(t.organizationId, t.name),
+  })
 );
 
 export const products = pgTable(
@@ -65,7 +67,9 @@ export const products = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('products_org_sku_uidx').on(t.organizationId, t.sku)]
+  (t) => ({
+    productsOrgSkuUidx: uniqueIndex('products_org_sku_uidx').on(t.organizationId, t.sku),
+  })
 );
 
 export const recipeLines = pgTable(
@@ -83,8 +87,8 @@ export const recipeLines = pgTable(
     qty: numeric('qty', { precision: 14, scale: 4 }).notNull(),
     sortOrder: integer('sort_order').notNull().default(0),
   },
-  (t) => [
-    index('recipe_lines_product_idx').on(t.productId),
-    uniqueIndex('recipe_lines_product_component_uidx').on(t.productId, t.componentType, t.componentId),
-  ]
+  (t) => ({
+    recipeLinesProductIdx: index('recipe_lines_product_idx').on(t.productId),
+    recipeLinesProductComponentUidx: uniqueIndex('recipe_lines_product_component_uidx').on(t.productId, t.componentType, t.componentId),
+  })
 );

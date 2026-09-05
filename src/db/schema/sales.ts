@@ -37,11 +37,11 @@ export const sales = pgTable(
     cancelledByUserId: uuid('cancelled_by_user_id').references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('sales_org_outlet_nota_uidx').on(t.organizationId, t.outletId, t.noNota),
-    index('sales_outlet_sold_at_idx').on(t.outletId, t.soldAt),
-    index('sales_org_sold_at_idx').on(t.organizationId, t.soldAt),
-  ]
+  (t) => ({
+    salesOrgOutletNotaUidx: uniqueIndex('sales_org_outlet_nota_uidx').on(t.organizationId, t.outletId, t.noNota),
+    salesOutletSoldAtIdx: index('sales_outlet_sold_at_idx').on(t.outletId, t.soldAt),
+    salesOrgSoldAtIdx: index('sales_org_sold_at_idx').on(t.organizationId, t.soldAt),
+  })
 );
 
 export const saleItems = pgTable('sale_items', {

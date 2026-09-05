@@ -24,7 +24,9 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('users_email_uidx').on(t.email)]
+  (t) => ({
+    usersEmailUidx: uniqueIndex('users_email_uidx').on(t.email),
+  })
 );
 
 export const organizations = pgTable('organizations', {
@@ -53,10 +55,10 @@ export const organizationMembers = pgTable(
     defaultOutletId: uuid('default_outlet_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('org_members_org_user_uidx').on(t.organizationId, t.userId),
-    index('org_members_user_idx').on(t.userId),
-  ]
+  (t) => ({
+    orgMembersOrgUserUidx: uniqueIndex('org_members_org_user_uidx').on(t.organizationId, t.userId),
+    orgMembersUserIdx: index('org_members_user_idx').on(t.userId),
+  })
 );
 
 export const outlets = pgTable(
@@ -76,7 +78,9 @@ export const outlets = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('outlets_org_idx').on(t.organizationId)]
+  (t) => ({
+    outletsOrgIdx: index('outlets_org_idx').on(t.organizationId),
+  })
 );
 
 export const warehouses = pgTable(
@@ -94,10 +98,10 @@ export const warehouses = pgTable(
     isDefault: boolean('is_default').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('warehouses_org_outlet_code_uidx').on(t.organizationId, t.outletId, t.code),
-    index('warehouses_outlet_idx').on(t.outletId),
-  ]
+  (t) => ({
+    warehousesOrgOutletCodeUidx: uniqueIndex('warehouses_org_outlet_code_uidx').on(t.organizationId, t.outletId, t.code),
+    warehousesOutletIdx: index('warehouses_outlet_idx').on(t.outletId),
+  })
 );
 
 export const subscriptions = pgTable(
@@ -115,7 +119,9 @@ export const subscriptions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('subscriptions_org_uidx').on(t.organizationId)]
+  (t) => ({
+    subscriptionsOrgUidx: uniqueIndex('subscriptions_org_uidx').on(t.organizationId),
+  })
 );
 
 export const notificationPreferences = pgTable('notification_preferences', {
@@ -150,10 +156,10 @@ export const refreshTokens = pgTable(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('refresh_tokens_hash_uidx').on(t.tokenHash),
-    index('refresh_tokens_user_idx').on(t.userId),
-  ]
+  (t) => ({
+    refreshTokensHashUidx: uniqueIndex('refresh_tokens_hash_uidx').on(t.tokenHash),
+    refreshTokensUserIdx: index('refresh_tokens_user_idx').on(t.userId),
+  })
 );
 
 export const emailOtps = pgTable(
@@ -172,7 +178,9 @@ export const emailOtps = pgTable(
     lastSentAt: timestamp('last_sent_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('email_otps_email_purpose_idx').on(t.email, t.purpose)]
+  (t) => ({
+    emailOtpsEmailPurposeIdx: index('email_otps_email_purpose_idx').on(t.email, t.purpose),
+  })
 );
 
 export const passwordResetTokens = pgTable(
@@ -187,7 +195,9 @@ export const passwordResetTokens = pgTable(
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex('password_reset_hash_uidx').on(t.tokenHash)]
+  (t) => ({
+    passwordResetHashUidx: uniqueIndex('password_reset_hash_uidx').on(t.tokenHash),
+  })
 );
 
 export const registrations = pgTable('registrations', {

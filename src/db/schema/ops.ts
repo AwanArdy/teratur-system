@@ -15,9 +15,9 @@ export const idempotencyKeys = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   },
-  (t) => [
-    uniqueIndex('idempotency_scope_uidx').on(t.organizationId, t.userId, t.method, t.path, t.key),
-  ]
+  (t) => ({
+    idempotencyScopeUidx: uniqueIndex('idempotency_scope_uidx').on(t.organizationId, t.userId, t.method, t.path, t.key),
+  })
 );
 
 export const auditLogs = pgTable(
@@ -34,7 +34,9 @@ export const auditLogs = pgTable(
     requestId: text('request_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('audit_logs_org_time_idx').on(t.organizationId, t.createdAt)]
+  (t) => ({
+    auditLogsOrgTimeIdx: index('audit_logs_org_time_idx').on(t.organizationId, t.createdAt),
+  })
 );
 
 export const exportJobs = pgTable('export_jobs', {
@@ -65,10 +67,10 @@ export const dailyMetrics = pgTable(
     trxCount: integer('trx_count').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('daily_metrics_outlet_date_uidx').on(t.outletId, t.date),
-    index('daily_metrics_org_date_idx').on(t.organizationId, t.date),
-  ]
+  (t) => ({
+    dailyMetricsOutletDateUidx: uniqueIndex('daily_metrics_outlet_date_uidx').on(t.outletId, t.date),
+    dailyMetricsOrgDateIdx: index('daily_metrics_org_date_idx').on(t.organizationId, t.date),
+  })
 );
 
 export const documentCounters = pgTable(
@@ -80,7 +82,7 @@ export const documentCounters = pgTable(
     yyyymmdd: text('yyyymmdd').notNull(),
     lastValue: integer('last_value').notNull(),
   },
-  (t) => [
-    uniqueIndex('doc_counters_uidx').on(t.organizationId, t.outletId, t.kind, t.yyyymmdd),
-  ]
+  (t) => ({
+    docCountersUidx: uniqueIndex('doc_counters_uidx').on(t.organizationId, t.outletId, t.kind, t.yyyymmdd),
+  })
 );

@@ -22,10 +22,10 @@ export const inventoryBalances = pgTable(
     avgUnitCost: numeric('avg_unit_cost', { precision: 14, scale: 4 }).notNull().default('0'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    uniqueIndex('inv_bal_wh_item_uidx').on(t.warehouseId, t.itemType, t.itemId),
-    index('inv_bal_org_outlet_idx').on(t.organizationId, t.outletId),
-  ]
+  (t) => ({
+    invBalWhItemUidx: uniqueIndex('inv_bal_wh_item_uidx').on(t.warehouseId, t.itemType, t.itemId),
+    invBalOrgOutletIdx: index('inv_bal_org_outlet_idx').on(t.organizationId, t.outletId),
+  })
 );
 
 export const stockMovements = pgTable(
@@ -56,12 +56,12 @@ export const stockMovements = pgTable(
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index('stock_movements_org_time_idx').on(t.organizationId, t.occurredAt),
-    index('stock_movements_item_time_idx').on(t.organizationId, t.itemType, t.itemId, t.occurredAt),
-    index('stock_movements_ref_idx').on(t.refType, t.refId),
-    index('stock_movements_wh_idx').on(t.warehouseId, t.occurredAt),
-  ]
+  (t) => ({
+    stockMovementsOrgTimeIdx: index('stock_movements_org_time_idx').on(t.organizationId, t.occurredAt),
+    stockMovementsItemTimeIdx: index('stock_movements_item_time_idx').on(t.organizationId, t.itemType, t.itemId, t.occurredAt),
+    stockMovementsRefIdx: index('stock_movements_ref_idx').on(t.refType, t.refId),
+    stockMovementsWhIdx: index('stock_movements_wh_idx').on(t.warehouseId, t.occurredAt),
+  })
 );
 
 export const stockTransfers = pgTable(
@@ -87,10 +87,10 @@ export const stockTransfers = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
-  (t) => [
-    uniqueIndex('stock_transfers_org_no_uidx').on(t.organizationId, t.noTransfer),
-    index('stock_transfers_org_idx').on(t.organizationId, t.createdAt),
-  ]
+  (t) => ({
+    stockTransfersOrgNoUidx: uniqueIndex('stock_transfers_org_no_uidx').on(t.organizationId, t.noTransfer),
+    stockTransfersOrgIdx: index('stock_transfers_org_idx').on(t.organizationId, t.createdAt),
+  })
 );
 
 export const stockTransferLines = pgTable('stock_transfer_lines', {
@@ -136,7 +136,9 @@ export const stockOpnames = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
   },
-  (t) => [index('stock_opnames_org_idx').on(t.organizationId, t.createdAt)]
+  (t) => ({
+    stockOpnamesOrgIdx: index('stock_opnames_org_idx').on(t.organizationId, t.createdAt),
+  })
 );
 
 export const wasteLogs = pgTable(
@@ -163,5 +165,7 @@ export const wasteLogs = pgTable(
       .references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('waste_logs_org_time_idx').on(t.organizationId, t.createdAt)]
+  (t) => ({
+    wasteLogsOrgTimeIdx: index('waste_logs_org_time_idx').on(t.organizationId, t.createdAt),
+  })
 );

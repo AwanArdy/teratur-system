@@ -28,7 +28,9 @@ export const staff = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('staff_org_outlet_idx').on(t.organizationId, t.outletId)]
+  (t) => ({
+    staffOrgOutletIdx: index('staff_org_outlet_idx').on(t.organizationId, t.outletId),
+  })
 );
 
 export const cashShifts = pgTable(
@@ -58,5 +60,7 @@ export const cashShifts = pgTable(
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
   },
-  (t) => [index('cash_shifts_outlet_open_idx').on(t.outletId, t.status)]
+  (t) => ({
+    cashShiftsOutletOpenIdx: index('cash_shifts_outlet_open_idx').on(t.outletId, t.status),
+  })
 );

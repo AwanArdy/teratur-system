@@ -29,8 +29,8 @@ export const expenses = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index('expenses_outlet_date_idx').on(t.outletId, t.date),
-    index('expenses_org_date_idx').on(t.organizationId, t.date),
-  ]
+  (t) => ({
+    expensesOutletDateIdx: index('expenses_outlet_date_idx').on(t.outletId, t.date),
+    expensesOrgDateIdx: index('expenses_org_date_idx').on(t.organizationId, t.date),
+  })
 );
