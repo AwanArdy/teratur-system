@@ -6,6 +6,7 @@ import { env } from "./config/env.js";
 import { logger } from "./lib/logger.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { authRouter } from "./modules/auth/auth.routes.js";
 
 export const app = express();
 
@@ -39,6 +40,8 @@ v1Router.get('/meta', (req, res) => {
     requestId: req.headers['x-request-id'],
   });
 });
+
+v1Router.use('/auth', authRouter);
 
 app.use('/api/v1', v1Router);
 
