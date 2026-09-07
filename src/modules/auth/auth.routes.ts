@@ -35,7 +35,7 @@ authRouter.post('/otp/verify', async (req, res, next) => {
 authRouter.post('/register/complete', async (req, res, next) => {
   try {
     const body = registerCompleteSchema.parse(req.body);
-    const result = await authService.registerComplete(body);
+    const result = await authService.registrationComplete(body);
     res.status(201).json({ data: result, requestId: req.headers['x-request-id'] });
   } catch (err) {
     next(err);

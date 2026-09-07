@@ -1,3 +1,5 @@
+import { eq, and } from "drizzle-orm";
+import { db } from "../../db/client.js";
 import { authRepo } from "./auth.repo.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
 import { 
@@ -13,7 +15,14 @@ import {
 } from "../../lib/jwt.js";
 import { HttpError } from "../../middleware/errorHandler.js";
 import { logger } from "../../lib/logger.js";
-import { refreshTokens, registrations, subscriptions } from "../../db/schema/identity.js";
+import { 
+  organizations, 
+  organizationMembers, 
+  outlets, 
+  refreshTokens, 
+  registrations, 
+  subscriptions 
+} from "../../db/schema/identity.js";
 
 export const authService = {
   async registerStart(body: {
@@ -28,8 +37,9 @@ export const authService = {
     }
 
     const passwordHash = await hashPassword(body.password);
-    const user = await autRepo.createUser({
-      fullName: body.email.toLowerCase(),
+    const user = await authRepo.createUser({
+      fullName: body.fullName,
+      email: body.email.toLowerCase(),
       phone: body.phone,
       passwordHash,
       status: 'pending'
@@ -113,13 +123,13 @@ export const authService = {
       throw new HttpError(401, 'UNAUTHORIZED', 'Token onboarding tidak valid atau kadaluarsa');
     }
 
-    const reg = await authRepo.findRegistrationById(payload.reg;
-    id (!reg || reg.completedAt) {
+    const reg = await authRepo.findRegistrationById(payload.reg);
+    if (!reg || reg.completedAt) {
       throw new HttpError(400, 'CONFLICT', 'Proses registrasi ini sudah diselesaikan')
     }
 
     let planCode: 'free_trial' | 'starter' | 'growth' | 'pro' | 'business' = 'starter';
-    if (body.plan = 'Teratur Free' || body.plan === 'free_trial') planCode = 'free_trial';
+    if (body.plan === 'Teratur Free' || body.plan === 'free_trial') planCode = 'free_trial';
     else if (body.plan === 'Teratur Pro' || body.plan === 'pro') planCode = 'pro';
     else if (['growth', 'business'].includes(body.plan)) planCode = body.plan as any;
 
@@ -185,27 +195,34 @@ export const authService = {
       throw new HttpError(403, 'ONBOARDING_REQUIRED', 'Selesaikan pendaftaran bisnis anda terlebih dahulu')
     }
 
-    const userDetails = await db.query.organizationMembers.findFirst({
-      where: (om, { eq }) => eq(om.userId, user.id),
-      with: {
-        organization: true,
-      },
-    });
+    const [member] = await db
+      .select()
+      .from(organizationMembers)
+      .where(eq(organizationMembers.userId, user.id));
 
-    if (!userDetails) {
-      throw new HttpError(403, 'ONBOARDING_REQUIRED', 'User belum terikat dengan organisasi manapun')
+    if (!member) {
+      throw new HttpError(403, 'ONBOARDING_REQUIRED', 'User belum terikat dengan organisasi manapun');
     }
 
-    const orgId = userDetails.organizationId;
-    const [outlet] = await db.query.outlets.findMany({
-      where: (o, { eq }) => eq(o.organizationId, orgId),
-      limit: 1
-    });
+    const orgId = member.organizationId;
+    const [org] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, orgId));
 
-    const [sub] = await db.query.subscriptions.findMany({
-      where: (s, { eq }) => eq(s.organizationId, orgId),
-      limit: 1
-    });
+    if (!org) {
+      throw new HttpError(404, 'NOT_FOUND', 'Organisasi tidak ditemukan');
+    }
+
+    const [outlet] = await db
+      .select()
+      .from(outlets)
+      .where(eq(outlets.organizationId, orgId));
+
+    const [sub] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.organizationId, orgId));
 
     const ttlDays = body.rememberMe ? 30 : 0.5;
     const expiresAt = new Date(Date.now() + ttlDays * 24 * 3600 * 1000);
@@ -222,7 +239,7 @@ export const authService = {
     const accessToken = await generateAccessToken({
       sub: user.id,
       org: orgId,
-      role: userDetails.orgRole,
+      role: member.orgRole,
       sid: session.id,
     });
 
@@ -230,14 +247,14 @@ export const authService = {
       accessToken,
       refreshToken: refreshTokenRaw,
       expiresIn: 900,
-      user: 
+      user: {
         id: user.id,
         fullName: user.fullName,
         phone: user.phone,
         jobTitle: user.jobTitle || 'Owner / Pemilik Usaha'
       },
-      organization: { id: orgId, name: userDetails.organization.name },
-      outlet: { id: outlet.id, name: outlet.name },
+      organization: { id: orgId, name: org.name },
+      outlet: outlet ? { id: outlet.id, name: outlet.name } : { id: '', name: '' },
       subscription: { planCode: sub?.planCode || 'starter', status: sub?.status || 'active' }
     };
   },
@@ -263,10 +280,15 @@ export const authService = {
       expiresAt,
     });
 
-    const member = await db.query.organizationMembers.findFirst({
-      where: (om, { eq, and }) =>
-        and(eq(om.userId, session.userId), eq(om.organizationId, session.organizationId)),
-    });
+    const [member] = await db
+      .select()
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.userId, session.userId),
+          eq(organizationMembers.organizationId, session.organizationId)
+        )
+      );
 
     const accessToken = await generateAccessToken({
       sub: session.userId,

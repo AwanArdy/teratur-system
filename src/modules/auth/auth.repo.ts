@@ -160,6 +160,7 @@ export const authRepo = {
 
   async createRefreshToken(data: typeof refreshTokens.$inferInsert) {
     const [token] = await db.insert(refreshTokens).values(data).returning();
+    if (!token) throw new Error('Gagal membuat refresh token');
     return token;
   },
 
