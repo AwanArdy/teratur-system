@@ -9,7 +9,7 @@ warehousesRouter.use(authenticate);
 
 warehousesRouter.get('/', async (req, res, next) => {
   try {
-    const outletId = req.params.outletId as string;
+    const outletId = (req.params as Record<string, string>).outletId as string;
     const result = await warehousesService.listWarehouses(req.ctx!.organizationId, outletId);
     res.json({ data: result, requestId: req.headers['x-request-id'] });
   } catch (err) {
@@ -19,7 +19,7 @@ warehousesRouter.get('/', async (req, res, next) => {
 
 warehousesRouter.post('/', authorize('owner', 'admin'), async (req, res, next) => {
   try {
-    const outletId = req.params.outletId as string;
+    const outletId = (req.params as Record<string, string>).outletId as string;
     const body = createWarehouseSchema.parse(req.body);
     const result = await warehousesService.createWarehouse(req.ctx!.organizationId, outletId, body);
     res.status(201).json({ data: result, requestId: req.headers['x-request-id'] });
@@ -36,7 +36,7 @@ warehouseSingleRouter.patch('/:id', authorize('owner', 'admin'), async (req, res
     const body = updateWarehouseSchema.parse(req.body);
     const result = await warehousesService.updateWarehouse(
       req.ctx!.organizationId,
-      req.params.id,
+      req.params.id as string,
       body
     );
     res.json({ data: result, requestId: req.headers['x-request-id'] });

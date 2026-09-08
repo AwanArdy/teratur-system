@@ -14,7 +14,7 @@ export const outletsService = {
 
   async createOutlet(
     organizationId: string,
-    data: { name: string; businessType: any; address?: string; city?: string; phone?: string }
+    data: { name: string; businessType: any; address?: string | undefined; city?: string | undefined; phone?: string | undefined }
   ) {
     const currentCount = await outletsRepo.countActiveByOrg(organizationId);
     const limit = await outletsRepo.getSubscriptionLimit(organizationId);
@@ -33,7 +33,7 @@ export const outletsService = {
   async updateOutlet(
     organizationId: string,
     outletId: string,
-    data: { name?: string; businessType?: any; address?: string; city?: string; phone?: string }
+    data: { name?: string | undefined; businessType?: any; address?: string | undefined; city?: string | undefined; phone?: string | undefined }
   ) {
     const existing = await outletsRepo.getById(organizationId, outletId);
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Outlet tidak ditemukan');

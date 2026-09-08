@@ -9,7 +9,7 @@ export const warehousesService = {
   async createWarehouse(
     organizationId: string,
     outletId: string,
-    data: { name: string; code: string; isDefault?: boolean }
+    data: { name: string; code: string; isDefault?: boolean | undefined }
   ) {
     try {
       return await warehousesRepo.create(organizationId, outletId, data);
@@ -24,7 +24,7 @@ export const warehousesService = {
   async updateWarehouse(
     organizationId: string,
     warehouseId: string,
-    data: { name?: string; code?: string; isDefault?: boolean }
+    data: { name?: string | undefined; code?: string | undefined; isDefault?: boolean | undefined }
   ) {
     const updated = await warehousesRepo.update(organizationId, warehouseId, data);
     if (!updated) throw new HttpError(404, 'NOT_FOUND', 'Gudang tidak ditemukan');

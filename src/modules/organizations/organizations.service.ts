@@ -10,7 +10,7 @@ export const organizationsService = {
 
   async updateCurrentOrg(
     organizationId: string,
-    data: { name?: string; province?: string; city?: string }
+    data: { name?: string | undefined; province?: string | undefined; city?: string | undefined }
   ) {
     const updated = await organizationsRepo.update(organizationId, data);
     if (!updated) throw new HttpError(404, 'NOT_FOUND', 'Gagal memperbarui organisasi');

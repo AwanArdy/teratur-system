@@ -18,7 +18,7 @@ export const warehousesRepo = {
   async create(
     organizationId: string,
     outletId: string,
-    data: { name: string; code: string; isDefault?: boolean }
+    data: { name: string; code: string; isDefault?: boolean | undefined }
   ) {
     const [created] = await db
       .insert(warehouses)
@@ -37,7 +37,7 @@ export const warehousesRepo = {
   async update(
     organizationId: string,
     warehouseId: string,
-    data: { name?: string; code?: string; isDefault?: boolean }
+    data: { name?: string | undefined; code?: string | undefined; isDefault?: boolean | undefined }
   ) {
     const [updated] = await db
       .update(warehouses)

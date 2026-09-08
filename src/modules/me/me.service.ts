@@ -29,7 +29,7 @@ export const meService = {
 
   async updateProfile(
     userId: string,
-    data: { fullName?: string; jobTitle?: string; phone?: string; avatarUrl?: string | null }
+    data: { fullName?: string | undefined; jobTitle?: string | undefined; phone?: string | undefined; avatarUrl?: string | null | undefined }
   ) {
     const updated = await meRepo.updateUserProfile(userId, data);
     if (!updated) throw new HttpError(404, 'NOT_FOUND', 'Gagal memperbarui profil');

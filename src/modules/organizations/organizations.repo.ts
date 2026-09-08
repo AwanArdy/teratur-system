@@ -13,7 +13,7 @@ export const organizationsRepo = {
 
   async update(
     organizationId: string,
-    data: { name?: string; province?: string; city?: string }
+    data: { name?: string | undefined; province?: string | undefined; city?: string | undefined }
   ) {
     const [updated] = await db
       .update(organizations)

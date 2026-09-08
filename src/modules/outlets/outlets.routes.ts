@@ -38,7 +38,7 @@ outletsRouter.get('/:id', async (req, res, next) => {
 outletsRouter.patch('/:id', authorize('owner', 'admin'), async (req, res, next) => {
   try {
     const body = updateOutletSchema.parse(req.body);
-    const result = await outletsService.updateOutlet(req.ctx!.organizationId, req.params.id, body);
+    const result = await outletsService.updateOutlet(req.ctx!.organizationId, req.params.id as string, body);
     res.json({ data: result, requestId: req.headers['x-request-id'] });
   } catch (err) {
     next(err);

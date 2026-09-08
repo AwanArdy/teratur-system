@@ -34,7 +34,7 @@ export const outletsRepo = {
 
   async createOutletWithDefaultWarehouse(
     organizationId: string,
-    data: { name: string; businessType: any; address?: string; city?: string; phone?: string }
+    data: { name: string; businessType: any; address?: string | undefined; city?: string | undefined; phone?: string | undefined }
   ) {
     return await db.transaction(async (tx) => {
       const [outlet] = await tx
@@ -43,9 +43,9 @@ export const outletsRepo = {
           organizationId,
           name: data.name,
           businessType: data.businessType,
-          address: data.address,
-          city: data.city,
-          phone: data.phone,
+          address: data.address ?? null,
+          city: data.city ?? null,
+          phone: data.phone ?? null,
         })
         .returning();
 
@@ -69,7 +69,7 @@ export const outletsRepo = {
   async update(
     organizationId: string,
     outletId: string,
-    data: { name?: string; businessType?: any; address?: string; city?: string; phone?: string }
+    data: { name?: string | undefined; businessType?: any; address?: string | undefined; city?: string | undefined; phone?: string | undefined }
   ) {
     const [updated] = await db
       .update(outlets)
