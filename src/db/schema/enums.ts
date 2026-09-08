@@ -77,3 +77,4 @@ export const uomEnum = pgEnum('uom', [
 ]);
 export const recipeComponentTypeEnum = pgEnum('recipe_component_type', ['ingredient', 'product']);
 export const otpPurposeEnum = pgEnum('otp_purpose', ['register', 'email_change']);
+export type PlanCode = (typeof planCodeEnum.enumValues)[number];

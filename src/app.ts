@@ -7,6 +7,11 @@ import { logger } from "./lib/logger.js";
 import { requestId } from "./middleware/requestId.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
+import { meRouter } from "./modules/me/me.routes.js";
+import { organizationsRouter } from "./modules/organizations/organizations.routes.js";
+import { outletsRouter } from "./modules/outlets/outlets.routes.js";
+import { warehousesRouter, warehouseSingleRouter } from "./modules/warehouses/warehouses.routes.js";
+import { billingRouter } from "./modules/billing/billing.routes.js";
 
 export const app = express();
 
@@ -42,6 +47,12 @@ v1Router.get('/meta', (req, res) => {
 });
 
 v1Router.use('/auth', authRouter);
+v1Router.use('/me', meRouter);
+v1Router.use('/organizations', organizationsRouter);
+v1Router.use('/outlets', outletsRouter);
+v1Router.use('/outlets/:outletId/warehouses', warehousesRouter);
+v1Router.use('/warehouses', warehouseSingleRouter);
+v1Router.use('/billing', billingRouter);
 
 app.use('/api/v1', v1Router);
 
