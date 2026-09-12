@@ -10,7 +10,7 @@ export const ingredientsService = {
     return await ingredientsRepo.listByOrg(organizationId, outletId, params);
   },
 
-  async getIngredientsById(organizationId: string, id: string) {
+  async getIngredientById(organizationId: string, id: string) {
     const item = await ingredientsRepo.getById(organizationId, id);
     if (!item) throw new HttpError(404, 'NOT_FOUND', 'Bahan baku tidak ditemukan');
     return item;
@@ -28,7 +28,7 @@ export const ingredientsService = {
     });
   },
 
-  async updateIngredients(organizationId: string, id: string, body: any) {
+  async updateIngredient(organizationId: string, id: string, body: any) {
     const existing = await ingredientsRepo.getById(organizationId, id);
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Bahan baku tidak ditemukan');
 
