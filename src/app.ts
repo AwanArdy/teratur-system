@@ -16,14 +16,14 @@ import { suppliersRouter } from "./modules/suppliers/suppliers.routes.js";
 import { ingredientsRouter } from "./modules/ingredients/ingredients.routes.js";
 import { productsRouter } from "./modules/products/products.routes.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
+import { salesRouter } from "./modules/sales/sales.routes.js";
 
 export const app = express();
 
 app.use(helmet());
 app.use(cors({ origin: env.CORS_ORIGINS.split(',') }));
-app.use(requestId)
-app.use(express.json({ limit: '1mb' }));
 app.use(requestId);
+app.use(express.json({ limit: '1mb' }));
 app.use(
   pinoHttp({
     logger,
@@ -61,6 +61,7 @@ v1Router.use('/suppliers', suppliersRouter);
 v1Router.use('/ingredients', ingredientsRouter);
 v1Router.use('/products', productsRouter);
 v1Router.use('/inventory', inventoryRouter);
+v1Router.use('/sales', salesRouter);
 
 app.use('/api/v1', v1Router);
 
