@@ -12,6 +12,9 @@ import { organizationsRouter } from "./modules/organizations/organizations.route
 import { outletsRouter } from "./modules/outlets/outlets.routes.js";
 import { warehousesRouter, warehouseSingleRouter } from "./modules/warehouses/warehouses.routes.js";
 import { billingRouter } from "./modules/billing/billing.routes.js";
+import { suppliersRouter } from "./modules/suppliers/suppliers.routes.js";
+import { ingredientsRouter } from "./modules/ingredients/ingredients.routes.js";
+import { productsRouter } from "./modules/products/products.routes.js";
 
 export const app = express();
 
@@ -53,6 +56,9 @@ v1Router.use('/outlets', outletsRouter);
 v1Router.use('/outlets/:outletId/warehouses', warehousesRouter);
 v1Router.use('/warehouses', warehouseSingleRouter);
 v1Router.use('/billing', billingRouter);
+v1Router.use('/suppliers', suppliersRouter);
+v1Router.use('/ingredients', ingredientsRouter);
+v1Router.use('/products', productsRouter);
 
 app.use('/api/v1', v1Router);
 
