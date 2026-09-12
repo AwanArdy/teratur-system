@@ -17,6 +17,8 @@ import { ingredientsRouter } from "./modules/ingredients/ingredients.routes.js";
 import { productsRouter } from "./modules/products/products.routes.js";
 import { inventoryRouter } from "./modules/inventory/inventory.routes.js";
 import { salesRouter } from "./modules/sales/sales.routes.js";
+import { expensesRouter } from "./modules/expenses/expenses.routes.js";
+import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 
 export const app = express();
 
@@ -62,6 +64,8 @@ v1Router.use('/ingredients', ingredientsRouter);
 v1Router.use('/products', productsRouter);
 v1Router.use('/inventory', inventoryRouter);
 v1Router.use('/sales', salesRouter);
+v1Router.use('/expenses', expensesRouter);
+v1Router.use('/dashboard', dashboardRouter);
 
 app.use('/api/v1', v1Router);
 
