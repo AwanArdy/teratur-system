@@ -25,6 +25,7 @@ import { wastesRouter } from "./modules/wastes/wastes.routes.js";
 import { staffRouter } from "./modules/staff/staff.routes.js";
 import { shiftsRouter } from "./modules/shifts/shifts.routes.js";
 import { payrollRouter } from "./modules/payroll/payroll.routes.js";
+import { aiRouter } from "./modules/ai/ai.routes.js";
 
 export const app = express();
 
@@ -78,6 +79,7 @@ v1Router.use('/wastes', wastesRouter);
 v1Router.use('/staff', staffRouter);
 v1Router.use('/shifts', shiftsRouter);
 v1Router.use('/payroll', payrollRouter);
+v1Router.use('/ai', aiRouter);
 
 app.use('/api/v1', v1Router);
 
