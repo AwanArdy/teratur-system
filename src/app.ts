@@ -22,6 +22,9 @@ import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { transfersRouter } from "./modules/transfers/transfers.routes.js";
 import { opnamesRouter } from "./modules/opnames/opnames.routes.js";
 import { wastesRouter } from "./modules/wastes/wastes.routes.js";
+import { staffRouter } from "./modules/staff/staff.routes.js";
+import { shiftsRouter } from "./modules/shifts/shifts.routes.js";
+import { payrollRouter } from "./modules/payroll/payroll.routes.js";
 
 export const app = express();
 
@@ -72,6 +75,9 @@ v1Router.use('/dashboard', dashboardRouter);
 v1Router.use('/transfers', transfersRouter);
 v1Router.use('/opnames', opnamesRouter);
 v1Router.use('/wastes', wastesRouter);
+v1Router.use('/staff', staffRouter);
+v1Router.use('/shifts', shiftsRouter);
+v1Router.use('/payroll', payrollRouter);
 
 app.use('/api/v1', v1Router);
 
