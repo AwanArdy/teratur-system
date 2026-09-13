@@ -64,3 +64,31 @@ export const cashShifts = pgTable(
     cashShiftsOutletOpenIdx: index('cash_shifts_outlet_open_idx').on(t.outletId, t.status),
   })
 );
+
+export const payrollStubs = pgTable(
+  'payroll_stubs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    outletId: uuid('outlet_id')
+      .notNull()
+      .references(() => outlets.id),
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staff.id),
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    baseSalaryIdr: bigint('base_salary_idr', { mode: 'number' }).notNull(),
+    bonusIdr: bigint('bonus_idr', { mode: 'number' }).notNull().default(0),
+    deductionsIdr: bigint('deductions_idr', { mode: 'number' }).notNull().default(0),
+    totalNetIdr: bigint('total_net_idr', { mode: 'number' }).notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    payrollStubsOrgIdx: index('payroll_stubs_org_idx').on(t.organizationId, t.outletId),
+  })
+);
+

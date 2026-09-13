@@ -1,6 +1,7 @@
 import { shiftsRepo } from './shifts.repo.js';
+import { staffRepo } from '../staff/staff.repo.js';
 import { HttpError } from '../../middleware/errorHandler.js';
-import { RequestContext } from '../../types/express.d.js';
+import type { RequestContext } from '../../types/express.d.js';
 
 export const shiftsService = {
   async getActiveShift(organizationId: string, outletId: string | null) {
@@ -30,11 +31,21 @@ export const shiftsService = {
       );
     }
 
+    let staffId = body.cashierStaffId || body.staffId;
+    if (!staffId) {
+      const existingStaff = await staffRepo.getByUserId(ctx.organizationId, ctx.userId);
+      if (existingStaff) {
+        staffId = existingStaff.id;
+      } else {
+        throw new HttpError(400, 'STAFF_REQUIRED', 'Staf kasir wajib ditentukan');
+      }
+    }
+
     return await shiftsRepo.create(ctx.organizationId, activeOutletId, {
       shiftName: body.shiftName,
       startingCashIdr: body.startingCashIdr,
       openedByUserId: ctx.userId,
-      ...(body.cashierStaffId ? { cashierStaffId: body.cashierStaffId } : {}),
+      staffId,
       ...(body.notes ? { notes: body.notes } : {}),
       status: 'open',
     });
@@ -58,9 +69,8 @@ export const shiftsService = {
     const status: 'balanced' | 'variance' = varianceIdr === 0 ? 'balanced' : 'variance';
 
     return await shiftsRepo.close(currentShift.id, {
-      expectedCashIdr,
-      endingCashIdr,
-      varianceIdr,
+      actualPhysicalCashIdr: endingCashIdr,
+      differenceIdr: varianceIdr,
       status,
       ...(body.notes ? { notes: body.notes } : {}),
     });

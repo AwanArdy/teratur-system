@@ -1,7 +1,7 @@
 import { payrollRepo } from './payroll.repo.js';
 import { staffRepo } from '../staff/staff.repo.js';
 import { HttpError } from '../../middleware/errorHandler.js';
-import { RequestContext } from '../../types/express.d.js';
+import type { RequestContext } from '../../types/express.d.js';
 
 export const payrollService = {
   async listStubs(

@@ -1,6 +1,6 @@
 import { db } from '../../db/client.js';
 import { eq, and, count, desc } from 'drizzle-orm';
-import { payrollStubs, staffMembers } from '../../db/schema/staff.js';
+import { payrollStubs, staff } from '../../db/schema/staff.js';
 
 export const payrollRepo = {
   async listStubs(
@@ -27,11 +27,11 @@ export const payrollRepo = {
         totalNetIdr: payrollStubs.totalNetIdr,
         notes: payrollStubs.notes,
         createdAt: payrollStubs.createdAt,
-        staffName: staffMembers.fullName,
-        staffRole: staffMembers.role,
+        staffName: staff.name,
+        staffRole: staff.staffRole,
       })
       .from(payrollStubs)
-      .leftJoin(staffMembers, eq(staffMembers.id, payrollStubs.staffId))
+      .leftJoin(staff, eq(staff.id, payrollStubs.staffId))
       .where(whereClause)
       .orderBy(desc(payrollStubs.createdAt))
       .limit(params.limit)
@@ -42,7 +42,11 @@ export const payrollRepo = {
     return { data: items, total: totalRow?.total || 0 };
   },
 
-  async create(organizationId: string, outletId: string, data: typeof payrollStubs.$inferInsert) {
+  async create(
+    organizationId: string,
+    outletId: string,
+    data: Omit<typeof payrollStubs.$inferInsert, 'organizationId' | 'outletId'>
+  ) {
     const [stub] = await db
       .insert(payrollStubs)
       .values({

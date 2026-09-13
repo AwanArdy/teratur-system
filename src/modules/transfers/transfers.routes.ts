@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { requirePlan } from '../../middleware/requirePlan.js';
-import { idempotency } from '../../middleware/idempotency.js';
+import { requireIdempotencyKey } from '../../middleware/idempotency.js';
 import { transfersService } from './transfers.service.js';
 import { createTransferSchema, transfersQuerySchema } from './transfers.schemas.js';
 
@@ -34,7 +34,7 @@ transfersRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-transfersRouter.post('/', idempotency, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+transfersRouter.post('/', requireIdempotencyKey, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
   try {
     const body = createTransferSchema.parse(req.body);
     const result = await transfersService.createTransfer(req.ctx!, body);

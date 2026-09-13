@@ -1,6 +1,6 @@
 import { db } from '../../db/client.js';
-import { eq, and, count, desc } from 'drizzle-orm';
-import { cashShifts, staffMembers } from '../../db/schema/staff.js';
+import { eq, and, count, desc, sql } from 'drizzle-orm';
+import { cashShifts, staff } from '../../db/schema/staff.js';
 import { users } from '../../db/schema/identity.js';
 
 export const shiftsRepo = {
@@ -39,17 +39,17 @@ export const shiftsRepo = {
         startingCashIdr: cashShifts.startingCashIdr,
         cashSalesIdr: cashShifts.cashSalesIdr,
         qrisSalesIdr: cashShifts.qrisSalesIdr,
-        expectedCashIdr: cashShifts.expectedCashIdr,
-        endingCashIdr: cashShifts.endingCashIdr,
-        varianceIdr: cashShifts.varianceIdr,
+        expectedCashIdr: sql<number>`(${cashShifts.startingCashIdr} + ${cashShifts.cashSalesIdr})`,
+        endingCashIdr: cashShifts.actualPhysicalCashIdr,
+        varianceIdr: cashShifts.differenceIdr,
         openedAt: cashShifts.openedAt,
         closedAt: cashShifts.closedAt,
         openedByName: users.fullName,
-        cashierStaffName: staffMembers.fullName,
+        cashierStaffName: staff.name,
       })
       .from(cashShifts)
       .leftJoin(users, eq(users.id, cashShifts.openedByUserId))
-      .leftJoin(staffMembers, eq(staffMembers.id, cashShifts.cashierStaffId))
+      .leftJoin(staff, eq(staff.id, cashShifts.staffId))
       .where(whereClause)
       .orderBy(desc(cashShifts.openedAt))
       .limit(params.limit)
@@ -68,7 +68,11 @@ export const shiftsRepo = {
     return shift || null;
   },
 
-  async create(organizationId: string, outletId: string, data: typeof cashShifts.$inferInsert) {
+  async create(
+    organizationId: string,
+    outletId: string,
+    data: Omit<typeof cashShifts.$inferInsert, 'organizationId' | 'outletId'>
+  ) {
     const [shift] = await db
       .insert(cashShifts)
       .values({
@@ -84,9 +88,8 @@ export const shiftsRepo = {
   async close(
     id: string,
     data: {
-      expectedCashIdr: number;
-      endingCashIdr: number;
-      varianceIdr: number;
+      actualPhysicalCashIdr: number;
+      differenceIdr: number;
       status: 'balanced' | 'variance';
       notes?: string | undefined;
     }
@@ -94,9 +97,8 @@ export const shiftsRepo = {
     const [closed] = await db
       .update(cashShifts)
       .set({
-        expectedCashIdr: data.expectedCashIdr,
-        endingCashIdr: data.endingCashIdr,
-        varianceIdr: data.varianceIdr,
+        actualPhysicalCashIdr: data.actualPhysicalCashIdr,
+        differenceIdr: data.differenceIdr,
         status: data.status,
         ...(data.notes !== undefined ? { notes: data.notes } : {}),
         closedAt: new Date(),

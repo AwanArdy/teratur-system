@@ -4,7 +4,7 @@ import { generateDocumentNo } from '../../lib/documentNo.js';
 import { inventoryRepo } from '../inventory/inventory.repo.js';
 import { roundMoney } from '../../lib/money.js';
 import { HttpError } from '../../middleware/errorHandler.js';
-import { RequestContext } from '../../types/express.d.js';
+import type { RequestContext } from '../../types/express.d.js';
 import { stockTransfers, stockTransferLines } from '../../db/schema/inventory.js';
 import { warehouses } from '../../db/schema/identity.js';
 import { eq, and } from 'drizzle-orm';
@@ -119,7 +119,7 @@ export const transfersService = {
         });
       }
 
-      const noTransfer = await generateDocumentNo(ctx.organizationId, null, 'TRF');
+      const noTransfer = await generateDocumentNo(tx, ctx.organizationId, fromWh.outletId, 'transfers');
 
       const [header] = await tx
         .insert(stockTransfers)
@@ -133,6 +133,10 @@ export const transfersService = {
           ...(body.notes ? { notes: body.notes } : {}),
         })
         .returning();
+
+      if (!header) {
+        throw new HttpError(500, 'INTERNAL_SERVER_ERROR', 'Gagal membuat transfer stok');
+      }
 
       await tx.insert(stockTransferLines).values(
         preparedLines.map((l) => ({

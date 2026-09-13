@@ -24,14 +24,15 @@ export const staffService = {
     }
 
     return await staffRepo.create(ctx.organizationId, {
-      fullName: body.fullName,
-      role: body.role,
+      name: body.fullName || body.name,
+      staffRole: body.role || body.staffRole,
       employmentType: body.employmentType,
       outletId: targetOutletId,
-      ...(body.phone !== undefined ? { phone: body.phone } : {}),
+      phone: body.phone || '',
+      joinedOn: body.joinedOn || new Date().toISOString().split('T')[0],
       ...(body.email !== undefined && body.email !== '' ? { email: body.email } : {}),
-      hourlyRateIdr: body.hourlyRateIdr,
-      monthlySalaryIdr: body.monthlySalaryIdr,
+      baseSalaryIdr: body.monthlySalaryIdr ?? body.baseSalaryIdr ?? 0,
+      allowanceIdr: body.allowanceIdr ?? 0,
     });
   },
 
@@ -40,13 +41,13 @@ export const staffService = {
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Staf tidak ditemukan');
 
     const updateData = {
-      ...(body.fullName !== undefined ? { fullName: body.fullName } : {}),
-      ...(body.role !== undefined ? { role: body.role } : {}),
+      ...(body.fullName !== undefined || body.name !== undefined ? { name: body.fullName || body.name } : {}),
+      ...(body.role !== undefined || body.staffRole !== undefined ? { staffRole: body.role || body.staffRole } : {}),
       ...(body.employmentType !== undefined ? { employmentType: body.employmentType } : {}),
       ...(body.phone !== undefined ? { phone: body.phone } : {}),
       ...(body.email !== undefined ? { email: body.email } : {}),
-      ...(body.hourlyRateIdr !== undefined ? { hourlyRateIdr: body.hourlyRateIdr } : {}),
-      ...(body.monthlySalaryIdr !== undefined ? { monthlySalaryIdr: body.monthlySalaryIdr } : {}),
+      ...(body.monthlySalaryIdr !== undefined || body.baseSalaryIdr !== undefined ? { baseSalaryIdr: body.monthlySalaryIdr ?? body.baseSalaryIdr } : {}),
+      ...(body.allowanceIdr !== undefined ? { allowanceIdr: body.allowanceIdr } : {}),
       ...(body.outletId !== undefined ? { outletId: body.outletId } : {}),
     };
 

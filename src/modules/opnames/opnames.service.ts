@@ -3,7 +3,7 @@ import { db } from '../../db/client.js';
 import { inventoryRepo } from '../inventory/inventory.repo.js';
 import { roundMoney } from '../../lib/money.js';
 import { HttpError } from '../../middleware/errorHandler.js';
-import { RequestContext } from '../../types/express.d.js';
+import type { RequestContext } from '../../types/express.d.js';
 import { stockOpnames } from '../../db/schema/inventory.js';
 import { eq } from 'drizzle-orm';
 
