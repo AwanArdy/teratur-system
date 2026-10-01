@@ -1,6 +1,7 @@
 import { db } from '../../db/client.js';
 import { eq, and, isNull, count, sql, desc } from 'drizzle-orm';
 import { staff } from '../../db/schema/staff.js';
+import { sales } from '../../db/schema/sales.js';
 import { outlets } from '../../db/schema/identity.js';
 
 export const staffRepo = {
@@ -41,7 +42,38 @@ export const staffRepo = {
 
     const [totalRow] = await db.select({ total: count() }).from(staff).where(whereClause);
 
-    return { data: items, total: totalRow?.total || 0 };
+    // Agregat penjualan per staf (DESIGN §11.13, halaman Karyawan):
+    // totalSalesHandledIdr + totalTrx dari sales paid via cashierStaffId.
+    const staffIds = items.map((i) => i.id);
+    const aggRows =
+      staffIds.length > 0
+        ? await db
+            .select({
+              staffId: sales.cashierStaffId,
+              totalSalesHandledIdr: sql<number>`COALESCE(SUM(${sales.totalIdr}), 0)::float`,
+              totalTrx: count(),
+            })
+            .from(sales)
+            .where(
+              and(
+                eq(sales.organizationId, organizationId),
+                eq(sales.status, 'paid'),
+                sql`${sales.cashierStaffId} IN (${sql.join(staffIds.map((id) => sql`${id}::uuid`), sql`, `)})`
+              )
+            )
+            .groupBy(sales.cashierStaffId)
+        : [];
+    const aggMap = new Map(
+      aggRows.map((r) => [r.staffId, { totalSalesHandledIdr: r.totalSalesHandledIdr || 0, totalTrx: r.totalTrx || 0 }])
+    );
+
+    const data = items.map((i) => ({
+      ...i,
+      totalSalesHandledIdr: aggMap.get(i.id)?.totalSalesHandledIdr || 0,
+      totalTrx: aggMap.get(i.id)?.totalTrx || 0,
+    }));
+
+    return { data, total: totalRow?.total || 0 };
   },
 
   async getById(organizationId: string, id: string) {
@@ -49,7 +81,27 @@ export const staffRepo = {
       .select()
       .from(staff)
       .where(and(eq(staff.id, id), eq(staff.organizationId, organizationId)));
-    return item || null;
+    if (!item) return null;
+
+    const [agg] = await db
+      .select({
+        totalSalesHandledIdr: sql<number>`COALESCE(SUM(${sales.totalIdr}), 0)::float`,
+        totalTrx: count(),
+      })
+      .from(sales)
+      .where(
+        and(
+          eq(sales.organizationId, organizationId),
+          eq(sales.status, 'paid'),
+          eq(sales.cashierStaffId, id)
+        )
+      );
+
+    return {
+      ...item,
+      totalSalesHandledIdr: agg?.totalSalesHandledIdr || 0,
+      totalTrx: agg?.totalTrx || 0,
+    };
   },
 
   async getByUserId(organizationId: string, userId: string) {
@@ -79,6 +131,15 @@ export const staffRepo = {
         ...data,
         updatedAt: new Date(),
       })
+      .where(and(eq(staff.id, id), eq(staff.organizationId, organizationId)))
+      .returning();
+    return updated || null;
+  },
+
+  async softDelete(organizationId: string, id: string) {
+    const [updated] = await db
+      .update(staff)
+      .set({ isActive: false, deletedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(staff.id, id), eq(staff.organizationId, organizationId)))
       .returning();
     return updated || null;

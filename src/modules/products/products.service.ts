@@ -61,10 +61,17 @@ export const productsService = {
     const marginPercentage =
       sellingPriceIdr > 0 ? (marginIdr / sellingPriceIdr) * 100 : 0;
 
+    // PRD §6.6: grade margin untuk tabel produk FE
+    const marginPct = Number(marginPercentage.toFixed(2));
+    const marginGrade: 'healthy' | 'thin' | 'low' | 'loss' =
+      marginPct >= 40 ? 'healthy' : marginPct >= 20 ? 'thin' : marginPct >= 0 ? 'low' : 'loss';
+
     return {
       hppIdr: Math.round(totalHpp),
       marginIdr: Math.round(marginIdr),
-      marginPercentage: Number(marginPercentage.toFixed(2)),
+      marginPercentage: marginPct,
+      marginPct,
+      marginGrade,
       recipeDetails,
     };
   },

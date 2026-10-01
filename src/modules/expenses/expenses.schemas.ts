@@ -34,6 +34,10 @@ export const createExpenseSchema = z.object({
   payStatus: z.enum(['paid', 'unpaid', 'credit']),
   notes: z.string().optional(),
   countedInCogs: z.boolean().default(false),
+  inputMethod: z.enum(['MANUAL', 'AI_RECEIPT']).default('MANUAL'),
+  receiptImageUrl: z.string().max(2048).optional(),
+  receiptConfidence: z.number().min(0).max(100).optional(),
+  receiptNumber: z.string().max(120).optional(),
 });
 
 export const updateExpenseSchema = createExpenseSchema.partial();

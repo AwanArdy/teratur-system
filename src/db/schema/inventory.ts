@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, bigint, numeric, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, bigint, numeric, uniqueIndex, index, check } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { organizations, outlets, warehouses, users } from './identity.js';
 import { stockItemTypeEnum, movementTypeEnum, transferStatusEnum, opnameStatusEnum, wasteReasonEnum, uomEnum } from './enums.js';
 
@@ -25,6 +26,10 @@ export const inventoryBalances = pgTable(
   (t) => ({
     invBalWhItemUidx: uniqueIndex('inv_bal_wh_item_uidx').on(t.warehouseId, t.itemType, t.itemId),
     invBalOrgOutletIdx: index('inv_bal_org_outlet_idx').on(t.organizationId, t.outletId),
+    // Stok tidak boleh negatif; reserved tidak boleh melebihi on-hand (DESIGN §6.3)
+    invBalQtyOnHandNonNeg: check('inv_bal_qty_on_hand_nonneg', sql`${t.qtyOnHand} >= 0`),
+    invBalQtyReservedNonNeg: check('inv_bal_qty_reserved_nonneg', sql`${t.qtyReserved} >= 0`),
+    invBalReservedLteOnHand: check('inv_bal_reserved_lte_onhand', sql`${t.qtyOnHand} >= ${t.qtyReserved}`),
   })
 );
 

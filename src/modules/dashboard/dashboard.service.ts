@@ -1,4 +1,5 @@
 import { dashboardRepo } from './dashboard.repo.js';
+import { getWitaDateString, getWitaDateNDaysAgo, getWitaYesterdayString } from '../../lib/time.js';
 
 export const dashboardService = {
   async getDashboardData(
@@ -45,12 +46,22 @@ export const dashboardService = {
 
     const chart = await dashboardRepo.getMonthlyChartData(organizationId, outletId);
     const lowStockRaw = await dashboardRepo.getLowStockItems(organizationId, outletId);
+    const outLast7 = await dashboardRepo.getOutQtyLast7Days(organizationId, outletId);
+    const outMap = new Map(outLast7.map((r) => [r.itemId, r.outQty || 0]));
 
-    const lowStock = lowStockRaw.map((item) => ({
-      ...item,
-      status: item.currentQty <= 0 ? 'critical' : ('low' as const),
-      burnRatePerDay: 1.2,
-    }));
+    // burnRate real (PRD §10.5) + status overstock selaras laporan stok (PRD §6.16)
+    const lowStock = lowStockRaw.map((item) => {
+      const outQty = outMap.get((item as any).id) || 0;
+      const burnRatePerDay = Number((outQty / 7).toFixed(2));
+      const minStock = Number((item as any).minStock) || 0;
+      const currentQty = Number((item as any).currentQty) || 0;
+      let status: 'critical' | 'low' | 'overstock' =
+        currentQty <= 0 ? 'critical' : 'low';
+      if (currentQty > Math.max(minStock * 4, minStock * 3) && burnRatePerDay < minStock / 30 && minStock > 0) {
+        status = 'overstock';
+      }
+      return { ...item, status, burnRatePerDay };
+    });
 
     const menuPerformanceRaw = await dashboardRepo.getMenuPerformance(organizationId, outletId);
     const menuPerformance = menuPerformanceRaw.map((item) => {
@@ -92,19 +103,18 @@ export const dashboardService = {
   },
 
   resolveDateRange(range: string, from?: string, to?: string) {
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = getWitaDateString();
 
     if (range === 'yesterday') {
-      const y = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const y = getWitaYesterdayString();
       return { from: y, to: y };
     }
     if (range === 'week') {
-      const w = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const w = getWitaDateNDaysAgo(7);
       return { from: w, to: todayStr };
     }
     if (range === 'month') {
-      const m = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const m = getWitaDateNDaysAgo(30);
       return { from: m, to: todayStr };
     }
     if (range === 'custom' && from && to) {

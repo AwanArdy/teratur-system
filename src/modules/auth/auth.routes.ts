@@ -6,7 +6,10 @@ import {
   registerCompleteSchema,
   loginSchema,
   refreshSchema,
-  changePasswordSchema
+  changePasswordSchema,
+  otpResendSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema
 } from './auth.schemas.js';
 import { authenticate } from "../../middleware/authenticate.js";
 
@@ -74,7 +77,38 @@ authRouter.post('/logout', async (req, res, next) => {
 authRouter.post('/change-password', authenticate, async (req, res, next) => {
   try {
     const body = changePasswordSchema.parse(req.body);
-    // Logika ganti password
+    await authService.changePassword(req.ctx!.userId, body);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/otp/resend', async (req, res, next) => {
+  try {
+    const body = otpResendSchema.parse(req.body);
+    const result = await authService.resendOtp(body);
+    res.status(202).json({ data: result, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/forgot-password', async (req, res, next) => {
+  try {
+    const body = forgotPasswordSchema.parse(req.body);
+    await authService.forgotPassword(body);
+    // Selalu 202 anti-enumeration
+    res.status(202).json({ data: { message: 'Jika email terdaftar, tautan reset telah dikirim' }, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+authRouter.post('/reset-password', async (req, res, next) => {
+  try {
+    const body = resetPasswordSchema.parse(req.body);
+    await authService.resetPassword(body);
     res.status(204).send();
   } catch (err) {
     next(err);

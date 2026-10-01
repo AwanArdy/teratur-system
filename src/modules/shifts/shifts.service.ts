@@ -51,19 +51,22 @@ export const shiftsService = {
     });
   },
 
-  async closeShift(ctx: RequestContext, body: any) {
+  async closeShift(ctx: RequestContext, body: any, shiftId?: string) {
     const activeOutletId = ctx.activeOutletId;
     if (!activeOutletId) throw new HttpError(400, 'OUTLET_REQUIRED', 'Header X-Outlet-Id wajib diisi');
 
-    const currentShift = await shiftsRepo.getActiveShift(ctx.organizationId, activeOutletId);
-    if (!currentShift) {
+    const currentShift = shiftId
+      ? await shiftsRepo.getById(ctx.organizationId, shiftId)
+      : await shiftsRepo.getActiveShift(ctx.organizationId, activeOutletId);
+    if (!currentShift || (currentShift as any).status !== 'open') {
       throw new HttpError(404, 'NOT_FOUND', 'Tidak ada shift aktif yang perlu ditutup');
     }
 
     const startingCash = Number(currentShift.startingCashIdr);
     const cashSales = Number(currentShift.cashSalesIdr);
     const expectedCashIdr = startingCash + cashSales;
-    const endingCashIdr = body.endingCashIdr;
+    // DESIGN memakai actualPhysicalCashIdr; field lama endingCashIdr tetap didukung
+    const endingCashIdr = body.actualPhysicalCashIdr ?? body.endingCashIdr;
     const varianceIdr = endingCashIdr - expectedCashIdr;
 
     const status: 'balanced' | 'variance' = varianceIdr === 0 ? 'balanced' : 'variance';

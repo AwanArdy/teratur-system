@@ -2,7 +2,7 @@ import { db } from "../../db/client.js";
 import { eq, and, isNull, sql, gte, lte, desc, sum, count } from "drizzle-orm";
 import { dailyMetrics } from "../../db/schema/ops.js";
 import { sales, saleItems } from "../../db/schema/sales.js";
-import { inventoryBalances, wasteLogs } from "../../db/schema/inventory.js";
+import { inventoryBalances, stockMovements, wasteLogs } from "../../db/schema/inventory.js";
 import { ingredients, products } from "../../db/schema/catalog.js"; 
 
 export const dashboardRepo = {
@@ -88,10 +88,16 @@ export const dashboardRepo = {
       .where(
         and(
           ...baseConditions,
-          sql`COALESCE(${inventoryBalances.qtyOnHand}, 0) <= ${ingredients.minStock}`
+          // Item butuh perhatian: kritis/menipis ATAU kandidat overstock (stok > 4x min).
+          // Klasifikasi final (critical/low/overstock) dihitung di service
+          // memakai burnRate 7 hari (PRD §6.16, §10.5).
+          sql`(
+            COALESCE(${inventoryBalances.qtyOnHand}, 0) <= ${ingredients.minStock}
+            OR COALESCE(${inventoryBalances.qtyOnHand}, 0) > (${ingredients.minStock} * 4)
+          )`
         )
       )
-      .limit(5);
+      .limit(10);
   },
 
   async getMenuPerformance(organizationId: string, outletId: string | null) {
@@ -117,8 +123,28 @@ export const dashboardRepo = {
       .limit(5);
   },
 
-  async getRecentSales(organizationId: string, outletId: string | null) {
+  // Total qty keluar (sale_out + waste_out + adjustment_out) per item 7 hari terakhir
+  // untuk burnRatePerDay = qty_out_7d / 7 (PRD §10.5).
+  async getOutQtyLast7Days(organizationId: string, outletId: string | null) {
+    const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
     return await db
+      .select({
+        itemId: stockMovements.itemId,
+        outQty: sql<number>`COALESCE(SUM(ABS(${stockMovements.qty})), 0)::float`,
+      })
+      .from(stockMovements)
+      .where(
+        and(
+          eq(stockMovements.organizationId, organizationId),
+          sql`${stockMovements.qty} < 0`,
+          gte(stockMovements.occurredAt, since),
+          ...(outletId ? [eq(stockMovements.outletId, outletId)] : [])
+        )
+      )
+      .groupBy(stockMovements.itemId);
+  },
+
+  async getRecentSales(organizationId: string, outletId: string | null) {    return await db
       .select({
         id: sales.id,
         noNota: sales.noNota,

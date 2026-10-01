@@ -183,7 +183,7 @@ export const salesService = {
             let unitCost = Number(balance.avgUnitCost);
             if (unitCost === 0 && line.componentType === 'ingredient') {
               const ing = ingredientMap.get(line.componentId);
-              if (ing) unitCost = ing.purchasePriceIdr;
+              if (ing) unitCost = Number((ing as any).lastPurchaseUnitCost ?? ing.purchasePriceIdr);
             }
 
             const amountIdr = Math.round(neededQty * unitCost);

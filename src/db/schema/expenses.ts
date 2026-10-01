@@ -26,6 +26,12 @@ export const expenses = pgTable(
     payStatus: payStatusEnum('pay_status').notNull(),
     notes: text('notes'),
     countedInCogs: boolean('counted_in_cogs').notNull().default(false),
+    // Metadata scan struk (alur AI_RECEIPT di halaman Pengeluaran FE).
+    // OCR penuh non-goal v1; kolom ini menyimpan hasil scan terverifikasi user.
+    inputMethod: text('input_method').notNull().default('MANUAL'),
+    receiptImageUrl: text('receipt_image_url'),
+    receiptConfidence: numeric('receipt_confidence', { precision: 5, scale: 2 }),
+    receiptNumber: text('receipt_number'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

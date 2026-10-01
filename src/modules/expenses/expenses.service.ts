@@ -1,5 +1,6 @@
 import { expensesRepo } from './expenses.repo.js';
 import { roundMoney } from '../../lib/money.js';
+import { getWitaDateString, getWitaYesterdayString } from '../../lib/time.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 
@@ -19,14 +20,13 @@ export const expensesService = {
   ) {
     let from = query.from;
     let to = query.to;
-    const todayWita = new Date().toISOString().slice(0, 10);
+    const todayWita = getWitaDateString();
 
     if (query.datePreset === 'today') {
       from = todayWita;
       to = todayWita;
     } else if (query.datePreset === 'yesterday') {
-      const y = new Date(Date.now() - 24 * 3600 * 1000);
-      const yWita = y.toISOString().slice(0, 10);
+      const yWita = getWitaYesterdayString();
       from = yWita;
       to = yWita;
     }
@@ -58,6 +58,9 @@ export const expensesService = {
     return await expensesRepo.create(ctx.organizationId, activeOutletId, {
       ...body,
       qty: body.qty.toString(),
+      ...(body.receiptConfidence !== undefined
+        ? { receiptConfidence: Number(body.receiptConfidence).toFixed(2) }
+        : {}),
       totalIdr,
     });
   },
@@ -74,6 +77,9 @@ export const expensesService = {
     const updatePayload = {
       ...body,
       ...(body.qty !== undefined ? { qty: body.qty.toString() } : {}),
+      ...(body.receiptConfidence !== undefined
+        ? { receiptConfidence: Number(body.receiptConfidence).toFixed(2) }
+        : {}),
       totalIdr,
     };
 
@@ -87,10 +93,8 @@ export const expensesService = {
   },
 
   async getSummary(organizationId: string, outletId: string | null) {
-    const today = new Date();
-    const todayDate = today.toISOString().slice(0, 10);
-    const yesterday = new Date(Date.now() - 24 * 3600 * 1000);
-    const yesterdayDate = yesterday.toISOString().slice(0, 10);
+    const todayDate = getWitaDateString();
+    const yesterdayDate = getWitaYesterdayString();
 
     return await expensesRepo.getSummary(organizationId, outletId, todayDate, yesterdayDate);
   },

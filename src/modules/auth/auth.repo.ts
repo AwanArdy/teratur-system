@@ -1,6 +1,6 @@
 import { db } from "../../db/client.js";
 import { eq, and, desc } from "drizzle-orm";
-import { 
+import {
   users,
   organizations,
   organizationMembers,
@@ -9,7 +9,8 @@ import {
   subscriptions,
   emailOtps,
   registrations,
-  refreshTokens
+  refreshTokens,
+  passwordResetTokens
 } from "../../db/schema/identity.js";
 
 export const authRepo = {
@@ -175,5 +176,24 @@ export const authRepo = {
 
   async revokeAllUserRefreshTokens(userId: string) {
     await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.userId, userId));
+  },
+
+  async createPasswordResetToken(data: typeof passwordResetTokens.$inferInsert) {
+    const [row] = await db.insert(passwordResetTokens).values(data).returning();
+    if (!row) throw new Error('Gagal membuat token reset');
+    return row;
+  },
+
+  async findPasswordResetTokenByHash(tokenHash: string) {
+    const [row] = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash));
+    return row || null;
+  },
+
+  async consumePasswordResetToken(id: string) {
+    await db.update(passwordResetTokens).set({ consumedAt: new Date() }).where(eq(passwordResetTokens.id, id));
+  },
+
+  async updateUserPassword(userId: string, passwordHash: string) {
+    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
   },
 };

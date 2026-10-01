@@ -204,11 +204,17 @@ export const productsRepo = {
         if (bal && Number(bal.avgCost) > 0) {
           result[item.componentId] = Number(bal.avgCost);
         } else {
+          // Fallback presisi: lastPurchaseUnitCost dulu, baru purchasePriceIdr (DESIGN §6.2)
           const [ing] = await db
-            .select({ purchasePrice: ingredients.purchasePriceIdr })
+            .select({
+              purchasePrice: ingredients.purchasePriceIdr,
+              unitCost: ingredients.lastPurchaseUnitCost,
+            })
             .from(ingredients)
             .where(eq(ingredients.id, item.componentId));
-          result[item.componentId] = ing ? Number(ing.purchasePrice) : 0;
+          result[item.componentId] = ing
+            ? Number(ing.unitCost ?? ing.purchasePrice ?? 0)
+            : 0;
         }
       } else {
         // finished good BOM

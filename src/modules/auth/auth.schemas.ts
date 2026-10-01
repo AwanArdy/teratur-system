@@ -47,3 +47,16 @@ export const changePasswordSchema = z.object({
   oldPassword: z.string().min(1, 'Password lama wajib diisi'),
   newPassword: z.string().min(8, 'Password baru minimal 8 karakter').max(128)
 });
+
+export const otpResendSchema = z.object({
+  registrationId: z.string().uuid('ID registrasi tidak valid'),
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Format email tidak valid'),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token reset wajib diisi'),
+  newPassword: z.string().min(8, 'Password baru minimal 8 karakter').max(128),
+});

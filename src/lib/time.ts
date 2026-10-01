@@ -36,3 +36,28 @@ export function formatWitaDisplay(date: Date): string {
 export function isSameWitaDay(date1: Date, date2: Date): boolean {
   return getWitaDateString(date1) === getWitaDateString(date2);
 }
+
+/**
+ * Returns YYYY-MM-DD string N days ago in WITA calendar.
+ */
+export function getWitaDateNDaysAgo(n: number, from: Date = new Date()): string {
+  const d = new Date(from.getTime() - n * 24 * 3600 * 1000);
+  return getWitaDateString(d);
+}
+
+/**
+ * Returns yesterday's YYYY-MM-DD in WITA calendar.
+ */
+export function getWitaYesterdayString(from: Date = new Date()): string {
+  return getWitaDateNDaysAgo(1, from);
+}
+
+/**
+ * Converts a WITA calendar day (YYYY-MM-DD) to a UTC range [start, end).
+ * WITA = UTC+8 (no DST).
+ */
+export function witaDayRangeToUtc(dateStr: string): { start: Date; end: Date } {
+  const start = new Date(`${dateStr}T00:00:00+08:00`);
+  const end = new Date(start.getTime() + 24 * 3600 * 1000);
+  return { start, end };
+}

@@ -58,3 +58,15 @@ shiftsRouter.post('/close', requireOutlet, authorize('owner', 'admin', 'staff'),
     next(err);
   }
 });
+
+// Alias kontrak DESIGN §11.13: POST /shifts/:id/close
+shiftsRouter.post('/:id/close', requireOutlet, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+    const body = closeShiftSchema.parse(req.body);
+    const result = await shiftsService.closeShift(req.ctx!, body, id);
+    res.json({ data: result, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});

@@ -17,7 +17,10 @@ export const createIngredientSchema = z.object({
     'orang',
     'bulan',
   ]),
-  purchasePriceIdr: z.number().int().min(0),
+  purchasePriceIdr: z.number().int().min(0).optional(),
+  // Harga presisi per 1 unit UOM dasar (mis. 18.5 untuk Rp 18.5/ml).
+  // Wajib isi salah satu: purchasePriceIdr (integer Rp) atau purchaseUnitCost (presisi).
+  purchaseUnitCost: z.number().nonnegative().optional(),
   minStock: z.number().min(0).default(0),
   leadTimeDays: z.number().int().min(0).max(365).default(3),
   supplierId: z.string().uuid().optional(),

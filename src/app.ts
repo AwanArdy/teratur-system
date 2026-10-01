@@ -26,6 +26,8 @@ import { staffRouter } from "./modules/staff/staff.routes.js";
 import { shiftsRouter } from "./modules/shifts/shifts.routes.js";
 import { payrollRouter } from "./modules/payroll/payroll.routes.js";
 import { aiRouter } from "./modules/ai/ai.routes.js";
+import { reportsRouter } from "./modules/reports/reports.routes.js";
+import { posRouter } from "./modules/pos/pos.routes.js";
 
 export const app = express();
 
@@ -42,7 +44,10 @@ app.use(
   })
 );
 
-// healthcheck
+// healthcheck (DESIGN: /healthz; /health dipertahankan untuk kompatibilitas)
+app.get('/healthz', (_req, res) => {
+  res.json({ status: 'ok', ts: new Date().toISOString() });
+});
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
@@ -80,8 +85,13 @@ v1Router.use('/staff', staffRouter);
 v1Router.use('/shifts', shiftsRouter);
 v1Router.use('/payroll', payrollRouter);
 v1Router.use('/ai', aiRouter);
+v1Router.use('/reports', reportsRouter);
+v1Router.use('/pos', posRouter);
 
 app.use('/api/v1', v1Router);
+// Kompatibilitas frontend: VITE_API_URL default masih `http://localhost:3000/api`
+// (tanpa /v1). Mount router yang sama di /api agar FE lama tetap jalan.
+app.use('/api', v1Router);
 
 app.use((req, res) => {
   res.status(404).json({

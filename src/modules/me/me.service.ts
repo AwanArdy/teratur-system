@@ -43,4 +43,25 @@ export const meService = {
   ) {
     return await meRepo.upsertNotificationPreferences(userId, organizationId, data);
   },
+
+  async listSessions(userId: string) {
+    return await meRepo.listActiveSessions(userId);
+  },
+
+  async revokeSession(userId: string, sessionId: string) {
+    const row = await meRepo.revokeSession(userId, sessionId);
+    if (!row) throw new HttpError(404, 'NOT_FOUND', 'Sesi tidak ditemukan');
+    return { id: sessionId };
+  },
+
+  async disableAccount(userId: string, confirmEmail?: string) {
+    const user = await meRepo.getUserProfile(userId);
+    if (!user) throw new HttpError(404, 'NOT_FOUND', 'User tidak ditemukan');
+    if (confirmEmail && confirmEmail.toLowerCase() !== user.email.toLowerCase()) {
+      throw new HttpError(400, 'VALIDATION_ERROR', 'Konfirmasi email tidak cocok');
+    }
+    await meRepo.revokeAllSessions(userId);
+    const disabled = await meRepo.disableUser(userId);
+    return { id: userId, status: disabled?.status || 'disabled' };
+  },
 };

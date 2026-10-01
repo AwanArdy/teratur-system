@@ -313,4 +313,79 @@ export const authService = {
       }
     }
   },
+
+  async resendOtp(body: { registrationId: string }) {
+    const reg = await authRepo.findRegistrationById(body.registrationId);
+    if (!reg) {
+      throw new HttpError(404, 'NOT_FOUND', 'Registrasi tidak ditemukan');
+    }
+    if (reg.completedAt) {
+      throw new HttpError(400, 'CONFLICT', 'Registrasi sudah diselesaikan');
+    }
+    const user = await authRepo.findUserById(reg.userId);
+    if (!user) throw new HttpError(404, 'NOT_FOUND', 'User tidak ditemukan');
+
+    const latest = await authRepo.findLatestotp(user.email, 'register');
+    if (latest && latest.lastSentAt) {
+      const elapsed = Date.now() - new Date(latest.lastSentAt).getTime();
+      if (elapsed < 60 * 1000) {
+        throw new HttpError(429, 'RATE_LIMITED', 'Tunggu 60 detik sebelum meminta OTP lagi');
+      }
+      if (latest.lockedUntil && new Date(latest.lockedUntil) > new Date()) {
+        throw new HttpError(429, 'RATE_LIMITED', 'Terlalu banyak percobaan. Silakan coba lagi nanti');
+      }
+    }
+
+    const otpCode = generateOtpCode();
+    const codeHash = hashOtpCode(user.email, otpCode);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await authRepo.createOtp({
+      email: user.email,
+      userId: user.id,
+      purpose: 'register',
+      codeHash,
+      expiresAt,
+      lastSentAt: new Date(),
+    });
+    logger.info(`[DEV OTP RESEND] Email: ${user.email} | OTP Code: ${otpCode}`);
+    return { email: user.email, otpExpiresAt: expiresAt.toISOString() };
+  },
+
+  async forgotPassword(body: { email: string }) {
+    // Selalu 202 di route (anti enumeration). Di sini hanya buat token bila user ada.
+    const user = await authRepo.findUserByEmail(body.email);
+    if (!user) return;
+    const raw = generateOpaqueToken();
+    const tokenHash = hashToken(raw);
+    await authRepo.createPasswordResetToken({
+      userId: user.id,
+      tokenHash,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    logger.info(`[DEV RESET] Email: ${user.email} | ResetToken: ${raw}`);
+  },
+
+  async resetPassword(body: { token: string; newPassword: string }) {
+    const tokenHash = hashToken(body.token);
+    const record = await authRepo.findPasswordResetTokenByHash(tokenHash);
+    if (!record || record.consumedAt || new Date(record.expiresAt) < new Date()) {
+      throw new HttpError(400, 'VALIDATION_ERROR', 'Token reset tidak valid atau kadaluarsa');
+    }
+    const passwordHash = await hashPassword(body.newPassword);
+    await authRepo.updateUserPassword(record.userId, passwordHash);
+    await authRepo.consumePasswordResetToken(record.id);
+    await authRepo.revokeAllUserRefreshTokens(record.userId);
+  },
+
+  async changePassword(userId: string, body: { oldPassword: string; newPassword: string }) {
+    const user = await authRepo.findUserById(userId);
+    if (!user) throw new HttpError(404, 'NOT_FOUND', 'User tidak ditemukan');
+    const valid = await verifyPassword(user.passwordHash, body.oldPassword);
+    if (!valid) {
+      throw new HttpError(401, 'UNAUTHORIZED', 'Password lama salah');
+    }
+    const passwordHash = await hashPassword(body.newPassword);
+    await authRepo.updateUserPassword(userId, passwordHash);
+    await authRepo.revokeAllUserRefreshTokens(userId);
+  },
 };

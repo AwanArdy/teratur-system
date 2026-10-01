@@ -1,5 +1,6 @@
 import { staffRepo } from './staff.repo.js';
 import { HttpError } from '../../middleware/errorHandler.js';
+import { getWitaDateString } from '../../lib/time.js';
 import type { RequestContext } from '../../types/express.d.js';
 
 export const staffService = {
@@ -29,15 +30,14 @@ export const staffService = {
       employmentType: body.employmentType,
       outletId: targetOutletId,
       phone: body.phone || '',
-      joinedOn: body.joinedOn || new Date().toISOString().split('T')[0],
+      joinedOn: body.joinedOn || getWitaDateString(),
       ...(body.email !== undefined && body.email !== '' ? { email: body.email } : {}),
       baseSalaryIdr: body.monthlySalaryIdr ?? body.baseSalaryIdr ?? 0,
       allowanceIdr: body.allowanceIdr ?? 0,
     });
   },
 
-  async updateStaff(organizationId: string, id: string, body: any) {
-    const existing = await staffRepo.getById(organizationId, id);
+  async updateStaff(organizationId: string, id: string, body: any) {    const existing = await staffRepo.getById(organizationId, id);
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Staf tidak ditemukan');
 
     const updateData = {
@@ -52,5 +52,11 @@ export const staffService = {
     };
 
     return await staffRepo.update(organizationId, id, updateData);
+  },
+
+  async deleteStaff(organizationId: string, id: string) {
+    const existing = await staffRepo.getById(organizationId, id);
+    if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Staf tidak ditemukan');
+    await staffRepo.softDelete(organizationId, id);
   },
 };

@@ -38,3 +38,32 @@ meRouter.patch('/notification-preferences', async (req, res, next) => {
     next(err);
   }
 });
+
+meRouter.get('/sessions', async (req, res, next) => {
+  try {
+    const result = await meService.listSessions(req.ctx!.userId);
+    res.json({ data: result, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+meRouter.delete('/sessions/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+    const result = await meService.revokeSession(req.ctx!.userId, id);
+    res.json({ data: result, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+meRouter.post('/disable', async (req, res, next) => {
+  try {
+    const { confirmEmail } = (req.body || {}) as { confirmEmail?: string };
+    const result = await meService.disableAccount(req.ctx!.userId, confirmEmail);
+    res.json({ data: result, requestId: req.headers['x-request-id'] });
+  } catch (err) {
+    next(err);
+  }
+});

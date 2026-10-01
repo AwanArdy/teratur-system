@@ -68,4 +68,41 @@ export const meRepo = {
       .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
     return result?.count || 0;
   },
+
+  async listActiveSessions(userId: string) {
+    return await db
+      .select({
+        id: refreshTokens.id,
+        userAgent: refreshTokens.userAgent,
+        ip: refreshTokens.ip,
+        lastUsedAt: refreshTokens.lastUsedAt,
+        createdAt: refreshTokens.createdAt,
+        expiresAt: refreshTokens.expiresAt,
+      })
+      .from(refreshTokens)
+      .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
+  },
+
+  async revokeSession(userId: string, sessionId: string) {
+    const [row] = await db
+      .select()
+      .from(refreshTokens)
+      .where(and(eq(refreshTokens.id, sessionId), eq(refreshTokens.userId, userId)));
+    if (!row) return null;
+    await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, sessionId));
+    return row;
+  },
+
+  async revokeAllSessions(userId: string) {
+    await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.userId, userId));
+  },
+
+  async disableUser(userId: string) {
+    const [updated] = await db
+      .update(users)
+      .set({ status: 'disabled' })
+      .where(eq(users.id, userId))
+      .returning();
+    return updated || null;
+  },
 };

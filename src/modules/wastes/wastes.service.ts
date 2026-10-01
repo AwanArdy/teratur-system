@@ -2,6 +2,7 @@ import { wastesRepo } from './wastes.repo.js';
 import { db } from '../../db/client.js';
 import { inventoryRepo } from '../inventory/inventory.repo.js';
 import { roundMoney } from '../../lib/money.js';
+import { getWitaDateString } from '../../lib/time.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 import { wasteLogs } from '../../db/schema/inventory.js';
@@ -96,8 +97,8 @@ export const wastesService = {
         })
         .returning();
 
-      // Update metrik harian waste
-      const dateWita = new Date().toISOString().slice(0, 10);
+      // Update metrik harian waste (tanggal kalender WITA)
+      const dateWita = getWitaDateString();
       await tx
         .insert(dailyMetrics)
         .values({

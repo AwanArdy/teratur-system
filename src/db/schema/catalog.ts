@@ -35,6 +35,9 @@ export const ingredients = pgTable(
     category: ingredientCategoryEnum('category').notNull(),
     uom: uomEnum('uom').notNull(),
     purchasePriceIdr: bigint('purchase_price_idr', { mode: 'number' }).notNull(),
+    // Harga beli presisi per 1 unit UOM dasar (mis. Rp 18.5/ml). purchasePriceIdr
+    // integer = pembulatan untuk kartu UI; HPP memakai kolom ini (DESIGN §6.2).
+    lastPurchaseUnitCost: numeric('last_purchase_unit_cost', { precision: 14, scale: 4 }),
     minStock: numeric('min_stock', { precision: 14, scale: 4 }).notNull().default('0'),
     leadTimeDays: integer('lead_time_days').notNull().default(3),
     supplierId: uuid('supplier_id').references(() => suppliers.id),
