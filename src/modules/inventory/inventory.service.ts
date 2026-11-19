@@ -4,7 +4,8 @@ import { calculateWac, roundMoney } from '../../lib/money.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 import { ingredients, products } from '../../db/schema/catalog.js';
-import { eq } from 'drizzle-orm';
+import { warehouses } from '../../db/schema/identity.js';
+import { eq, and, isNull } from 'drizzle-orm';
 
 export const inventoryService = {
   async listInventory(
@@ -53,7 +54,21 @@ export const inventoryService = {
     }
 
     let warehouseId = body.warehouseId;
-    if (!warehouseId) {
+    if (warehouseId) {
+      const [wh] = await db
+        .select()
+        .from(warehouses)
+        .where(
+          and(
+            eq(warehouses.id, warehouseId),
+            eq(warehouses.organizationId, ctx.organizationId),
+            eq(warehouses.outletId, activeOutletId)
+          )
+        );
+      if (!wh) {
+        throw new HttpError(404, 'NOT_FOUND', 'Gudang tidak ditemukan untuk outlet ini');
+      }
+    } else {
       const defaultWh = await inventoryRepo.getDefaultWarehouse(ctx.organizationId, activeOutletId);
       if (!defaultWh) {
         throw new HttpError(404, 'NOT_FOUND', 'Gudang default tidak ditemukan untuk outlet ini');
@@ -63,10 +78,16 @@ export const inventoryService = {
 
     // Verifikasi keberadaan item di catalog
     if (body.itemType === 'ingredient') {
-      const [ing] = await db.select().from(ingredients).where(eq(ingredients.id, body.itemId));
+      const [ing] = await db
+        .select()
+        .from(ingredients)
+        .where(and(eq(ingredients.id, body.itemId), eq(ingredients.organizationId, ctx.organizationId), isNull(ingredients.deletedAt)));
       if (!ing) throw new HttpError(404, 'NOT_FOUND', 'Bahan baku tidak ditemukan');
     } else {
-      const [prod] = await db.select().from(products).where(eq(products.id, body.itemId));
+      const [prod] = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.id, body.itemId), eq(products.organizationId, ctx.organizationId), isNull(products.deletedAt)));
       if (!prod) throw new HttpError(404, 'NOT_FOUND', 'Produk tidak ditemukan');
     }
 

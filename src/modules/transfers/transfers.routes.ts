@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
+import { authorize, authorizeStaff } from '../../middleware/authorize.js';
 import { requirePlan } from '../../middleware/requirePlan.js';
 import { requireIdempotencyKey } from '../../middleware/idempotency.js';
 import { transfersService } from './transfers.service.js';
@@ -34,7 +34,7 @@ transfersRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-transfersRouter.post('/', requireIdempotencyKey, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+transfersRouter.post('/', requireIdempotencyKey, authorizeStaff(['manager']), async (req, res, next) => {
   try {
     const body = createTransferSchema.parse(req.body);
     const result = await transfersService.createTransfer(req.ctx!, body);
@@ -44,7 +44,7 @@ transfersRouter.post('/', requireIdempotencyKey, authorize('owner', 'admin', 'st
   }
 });
 
-transfersRouter.post('/:id/receive', authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+transfersRouter.post('/:id/receive', authorizeStaff(['manager']), async (req, res, next) => {
   try {
     const { id } = req.params as { id: string };
     const result = await transfersService.receiveTransfer(req.ctx!, id);

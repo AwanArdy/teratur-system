@@ -1,8 +1,11 @@
 import { warehousesRepo } from './warehouses.repo.js';
+import { outletsRepo } from '../outlets/outlets.repo.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 
 export const warehousesService = {
   async listWarehouses(organizationId: string, outletId: string) {
+    const outlet = await outletsRepo.getById(organizationId, outletId);
+    if (!outlet) throw new HttpError(404, 'NOT_FOUND', 'Outlet tidak ditemukan pada organisasi ini');
     return await warehousesRepo.listByOutlet(organizationId, outletId);
   },
 
@@ -11,6 +14,8 @@ export const warehousesService = {
     outletId: string,
     data: { name: string; code: string; isDefault?: boolean | undefined }
   ) {
+    const outlet = await outletsRepo.getById(organizationId, outletId);
+    if (!outlet) throw new HttpError(404, 'NOT_FOUND', 'Outlet tidak ditemukan pada organisasi ini');
     try {
       return await warehousesRepo.create(organizationId, outletId, data);
     } catch (err: any) {

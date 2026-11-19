@@ -211,7 +211,13 @@ export const productsRepo = {
               unitCost: ingredients.lastPurchaseUnitCost,
             })
             .from(ingredients)
-            .where(eq(ingredients.id, item.componentId));
+            .where(
+              and(
+                eq(ingredients.id, item.componentId),
+                eq(ingredients.organizationId, organizationId),
+                isNull(ingredients.deletedAt)
+              )
+            );
           result[item.componentId] = ing
             ? Number(ing.unitCost ?? ing.purchasePrice ?? 0)
             : 0;

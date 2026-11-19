@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
+import { requirePlan } from '../../middleware/requirePlan.js';
 import { suppliersService } from './suppliers.service.js';
 import { createSupplierSchema, updateSupplierSchema } from './suppliers.schemas.js';
 
 export const suppliersRouter = Router();
 suppliersRouter.use(authenticate);
+suppliersRouter.use(requirePlan('growth'));
 
 suppliersRouter.get('/', async (req, res, next) => {
   try {

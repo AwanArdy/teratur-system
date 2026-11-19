@@ -1,8 +1,9 @@
 import { aiRepo } from "./ai.repo.js";
+import { billingService } from "../billing/billing.service.js";
 import { HttpError } from "../../middleware/errorHandler.js";
 import type { RequestContext } from "../../types/express.js";
 import { db } from "../../db/client.js";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { aiConversations, aiMessages } from "../../db/schema/ai.js";
 import { getWitaDateString, getWitaDateNDaysAgo, getWitaYesterdayString } from "../../lib/time.js";
 
@@ -10,17 +11,19 @@ export const aiService = {
   async getAggregatedContext(
     organizationId: string,
     outletId: string | null,
-    range: 'today' | 'yesterday' | 'week' | 'month'
+    range: 'today' | 'yesterday' | 'week' | 'month',
+    planCode: string = 'starter'
   ) {
     const dates = this.resolveDates(range);
-    return await aiRepo.getBusinessContext(organizationId, outletId, dates.from, dates.to);
+    return await aiRepo.getBusinessContext(organizationId, outletId, dates.from, dates.to, planCode);
   },
 
   async forwardToRagService(ctx: RequestContext, prompt: string, range: 'today' | 'yesterday' | 'week' | 'month') {
     const businessContext = await this.getAggregatedContext(
       ctx.organizationId,
       ctx.activeOutletId,
-      range
+      range,
+      ctx.planCode
     );
 
     const ragServiceUrl = process.env.RAG_SERVICE_URL;
@@ -93,6 +96,28 @@ export const aiService = {
 
   // --- Kontrak DESIGN §11.15: POST /ai/chat (rule-based v1, data tenant nyata) ---
   async chat(ctx: RequestContext, body: { conversationId?: string | undefined; message: string; clientMessageId?: string | undefined }) {
+    // Kuota AI Chat harian sesuai paket (PRD §8.2 & §9)
+    const dailyLimit = billingService.getAiLimit(ctx.planCode);
+    const todayStr = getWitaDateString();
+    const [todayCountRow] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(aiMessages)
+      .where(
+        and(
+          eq(aiMessages.organizationId, ctx.organizationId),
+          eq(aiMessages.role, 'user'),
+          sql`TO_CHAR(${aiMessages.createdAt} AT TIME ZONE 'Asia/Makassar', 'YYYY-MM-DD') = ${todayStr}`
+        )
+      );
+    const todayCount = Number(todayCountRow?.count || 0);
+    if (todayCount >= dailyLimit) {
+      throw new HttpError(
+        403,
+        'AI_LIMIT_EXCEEDED',
+        `Batas pesan AI harian untuk paket ${ctx.planCode} (${dailyLimit} pesan/hari) telah tercapai. Upgrade paket untuk menambah kuota.`
+      );
+    }
+
     let conversationId = body.conversationId;
     if (conversationId) {
       const [conv] = await db
@@ -128,7 +153,7 @@ export const aiService = {
     const msg = body.message.toLowerCase();
     const dates = this.resolveDates('week');
     const context = await aiRepo.getBusinessContext(
-      ctx.organizationId, ctx.activeOutletId, dates.from, dates.to,
+      ctx.organizationId, ctx.activeOutletId, dates.from, dates.to, ctx.planCode
     );
 
     let text: string;

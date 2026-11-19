@@ -9,8 +9,10 @@ export const dashboardService = {
       range: 'today' | 'yesterday' | 'week' | 'month' | 'custom';
       from?: string | undefined;
       to?: string | undefined;
-    }
+    },
+    planCode: string = 'starter'
   ) {
+    const isGrowthOrAbove = ['growth', 'pro', 'business'].includes(planCode);
     const dates = this.resolveDateRange(query.range, query.from, query.to);
     const metrics = await dashboardRepo.getMetricsAggregation(
       organizationId,
@@ -30,21 +32,23 @@ export const dashboardService = {
 
     const omsetNet = metrics.omsetNetIdr;
     const cogs = metrics.cogsIdr;
-    const opex = metrics.opexIdr;
+    // PRD §8.2 & §9: Starter nett KPI adalah omset - COGS saja. Opex dan waste mulai di Growth.
+    const opex = isGrowthOrAbove ? metrics.opexIdr : 0;
     const nettProfit = omsetNet - cogs - opex;
 
     const cogsRatioPct = omsetNet > 0 ? Number(((cogs / omsetNet) * 100).toFixed(1)) : 0;
     const nettMarginPct = omsetNet > 0 ? Number(((nettProfit / omsetNet) * 100).toFixed(1)) : 0;
-    const wastePct = omsetNet > 0 ? Number(((metrics.wasteIdr / omsetNet) * 100).toFixed(2)) : 0;
+    const wastePct = (isGrowthOrAbove && omsetNet > 0) ? Number(((metrics.wasteIdr / omsetNet) * 100).toFixed(2)) : 0;
 
     const omsetTrendPct = this.calcTrendPct(metrics.omsetNetIdr, prevMetrics.omsetNetIdr);
     const cogsTrendPct = this.calcTrendPct(metrics.cogsIdr, prevMetrics.cogsIdr);
+    const prevOpex = isGrowthOrAbove ? prevMetrics.opexIdr : 0;
     const profitTrendPct = this.calcTrendPct(
       nettProfit,
-      prevMetrics.omsetNetIdr - prevMetrics.cogsIdr - prevMetrics.opexIdr
+      prevMetrics.omsetNetIdr - prevMetrics.cogsIdr - prevOpex
     );
 
-    const chart = await dashboardRepo.getMonthlyChartData(organizationId, outletId);
+    const chart = await dashboardRepo.getMonthlyChartData(organizationId, outletId, isGrowthOrAbove);
     const lowStockRaw = await dashboardRepo.getLowStockItems(organizationId, outletId);
     const outLast7 = await dashboardRepo.getOutQtyLast7Days(organizationId, outletId);
     const outMap = new Map(outLast7.map((r) => [r.itemId, r.outQty || 0]));
@@ -66,9 +70,9 @@ export const dashboardService = {
     const menuPerformanceRaw = await dashboardRepo.getMenuPerformance(organizationId, outletId);
     const menuPerformance = menuPerformanceRaw.map((item) => {
       const marginPct =
-        item.sellingPriceIdr > 0
+        isGrowthOrAbove && item.sellingPriceIdr > 0
           ? Number((((item.sellingPriceIdr - item.cogsIdr) / item.sellingPriceIdr) * 100).toFixed(1))
-          : 0;
+          : null;
       return {
         ...item,
         marginPct,
@@ -87,7 +91,7 @@ export const dashboardService = {
         nettProfitIdr: nettProfit,
         nettMarginPct,
         criticalSkuCount: lowStock.filter((i) => i.status === 'critical').length,
-        wasteIdr: metrics.wasteIdr,
+        wasteIdr: isGrowthOrAbove ? metrics.wasteIdr : 0,
         wastePct,
         trends: {
           omsetPct: omsetTrendPct,

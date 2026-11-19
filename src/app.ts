@@ -38,6 +38,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(
   pinoHttp({
     logger,
+    redact: ['req.headers.authorization', 'req.headers.cookie'],
     customProps: (req) => ({
       requestId: req.headers['x-request-id'],
     }),

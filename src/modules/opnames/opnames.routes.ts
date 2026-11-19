@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
+import { authorize, authorizeStaff } from '../../middleware/authorize.js';
 import { requirePlan } from '../../middleware/requirePlan.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { opnamesService } from './opnames.service.js';
@@ -32,7 +32,7 @@ opnamesRouter.get('/', async (req, res, next) => {
 opnamesRouter.post(
   '/',
   requireOutlet,
-  authorize('owner', 'admin', 'staff'),
+  authorizeStaff(['manager', 'barista', 'kitchen']),
   async (req, res, next) => {
     try {
       const body = createOpnameSchema.parse(req.body);

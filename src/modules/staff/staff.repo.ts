@@ -13,6 +13,7 @@ export const staffRepo = {
     const offset = (params.page - 1) * params.limit;
     const conditions = [
       eq(staff.organizationId, organizationId),
+      isNull(staff.deletedAt),
       ...(outletId ? [eq(staff.outletId, outletId)] : []),
     ];
 
@@ -143,5 +144,13 @@ export const staffRepo = {
       .where(and(eq(staff.id, id), eq(staff.organizationId, organizationId)))
       .returning();
     return updated || null;
+  },
+
+  async countActiveStaff(organizationId: string) {
+    const [row] = await db
+      .select({ total: count() })
+      .from(staff)
+      .where(and(eq(staff.organizationId, organizationId), isNull(staff.deletedAt), eq(staff.isActive, true)));
+    return row?.total || 0;
   },
 };

@@ -2,6 +2,7 @@ import { db } from '../../db/client.js';
 import { eq, and, count, desc, sql } from 'drizzle-orm';
 import { cashShifts, staff } from '../../db/schema/staff.js';
 import { users } from '../../db/schema/identity.js';
+import { HttpError } from '../../middleware/errorHandler.js';
 
 export const shiftsRepo = {
   async getActiveShift(organizationId: string, outletId: string) {
@@ -73,16 +74,38 @@ export const shiftsRepo = {
     outletId: string,
     data: Omit<typeof cashShifts.$inferInsert, 'organizationId' | 'outletId'>
   ) {
-    const [shift] = await db
-      .insert(cashShifts)
-      .values({
-        ...data,
-        organizationId,
-        outletId,
-      })
-      .returning();
-    if (!shift) throw new Error('Gagal membuka shift');
-    return shift;
+    return await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(cashShifts)
+        .where(
+          and(
+            eq(cashShifts.organizationId, organizationId),
+            eq(cashShifts.outletId, outletId),
+            eq(cashShifts.status, 'open')
+          )
+        )
+        .for('update');
+
+      if (existing) {
+        throw new HttpError(
+          409,
+          'SHIFT_ALREADY_OPEN',
+          'Masih ada shift kasir yang aktif di outlet ini. Tutup shift terlebih dahulu.'
+        );
+      }
+
+      const [shift] = await tx
+        .insert(cashShifts)
+        .values({
+          ...data,
+          organizationId,
+          outletId,
+        })
+        .returning();
+      if (!shift) throw new Error('Gagal membuka shift');
+      return shift;
+    });
   },
 
   async close(

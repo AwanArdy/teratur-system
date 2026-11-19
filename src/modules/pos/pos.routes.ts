@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
+import { authorizeStaff } from '../../middleware/authorize.js';
+import { requirePlan } from '../../middleware/requirePlan.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { requireIdempotencyKey } from '../../middleware/idempotency.js';
 import { posService } from './pos.service.js';
@@ -41,7 +43,7 @@ posRouter.get('/active-shift', async (req, res, next) => {
 });
 
 // Buat penjualan dari aplikasi kasir (wajib Idempotency-Key anti double-submit)
-posRouter.post('/sales', requireIdempotencyKey, async (req, res, next) => {
+posRouter.post('/sales', requirePlan('starter'), authorizeStaff(['manager', 'cashier']), requireIdempotencyKey, async (req, res, next) => {
   try {
     const body = posSaleSchema.parse(req.body);
     const result = await posService.createPosSale(req.ctx!, body);

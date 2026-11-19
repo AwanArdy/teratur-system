@@ -1,5 +1,5 @@
 import { db } from "../../db/client.js";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull, gt } from "drizzle-orm";
 import {
   users,
   organizations,
@@ -174,6 +174,21 @@ export const authRepo = {
     await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, id));
   },
 
+  async consumeRefreshTokenByHash(hash: string) {
+    const [revoked] = await db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.tokenHash, hash),
+          isNull(refreshTokens.revokedAt),
+          gt(refreshTokens.expiresAt, new Date())
+        )
+      )
+      .returning();
+    return revoked || null;
+  },
+
   async revokeAllUserRefreshTokens(userId: string) {
     await db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.userId, userId));
   },
@@ -191,6 +206,33 @@ export const authRepo = {
 
   async consumePasswordResetToken(id: string) {
     await db.update(passwordResetTokens).set({ consumedAt: new Date() }).where(eq(passwordResetTokens.id, id));
+  },
+
+  async consumePasswordResetTokenByHash(tokenHash: string) {
+    const [consumed] = await db
+      .update(passwordResetTokens)
+      .set({ consumedAt: new Date() })
+      .where(
+        and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          isNull(passwordResetTokens.consumedAt),
+          gt(passwordResetTokens.expiresAt, new Date())
+        )
+      )
+      .returning();
+    return consumed || null;
+  },
+
+  async revokeAllPasswordResetTokens(userId: string) {
+    await db
+      .update(passwordResetTokens)
+      .set({ consumedAt: new Date() })
+      .where(
+        and(
+          eq(passwordResetTokens.userId, userId),
+          isNull(passwordResetTokens.consumedAt)
+        )
+      );
   },
 
   async updateUserPassword(userId: string, passwordHash: string) {

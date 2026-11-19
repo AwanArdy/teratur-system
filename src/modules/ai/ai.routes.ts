@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate.js";
+import { authorizeStaff } from "../../middleware/authorize.js";
 import { aiService } from "./ai.service.js";
 import { askAdvisorSchema, aiChatSchema } from "./ai.schemas.js";
 
 export const aiRouter = Router();
 aiRouter.use(authenticate);
+aiRouter.use(authorizeStaff(['manager']));
 
 // Kontrak DESIGN §11.15 (dipakai FE chat-ai + aplikasi kasir)
 aiRouter.post('/chat', async (req, res, next) => {
@@ -54,7 +56,8 @@ aiRouter.get('/context', async (req, res, next) => {
     const result = await aiService.getAggregatedContext(
       req.ctx!.organizationId,
       req.ctx!.activeOutletId,
-      range
+      range,
+      req.ctx!.planCode
     );
     res.json({ data: result, requestId: req.headers['x-request-id'] });
   } catch (err) {

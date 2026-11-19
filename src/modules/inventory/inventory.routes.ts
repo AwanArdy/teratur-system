@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
+import { authorize, authorizeStaff } from '../../middleware/authorize.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { inventoryService } from './inventory.service.js';
 import { stockAdjustmentSchema, inventoryQuerySchema } from './inventory.schemas.js';
@@ -39,7 +39,7 @@ inventoryRouter.get('/', async (req, res, next) => {
 inventoryRouter.post(
   '/adjustments',
   requireOutlet,
-  authorize('owner', 'admin', 'staff'),
+  authorizeStaff(['manager']),
   async (req, res, next) => {
     try {
       const body = stockAdjustmentSchema.parse(req.body);

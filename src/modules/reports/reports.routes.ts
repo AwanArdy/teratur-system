@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
+import { authorizeStaff } from '../../middleware/authorize.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { reportsService } from './reports.service.js';
 import {
@@ -10,6 +11,7 @@ import {
 
 export const reportsRouter = Router();
 reportsRouter.use(authenticate);
+reportsRouter.use(authorizeStaff(['manager', 'cashier']));
 
 // Laporan transaksi (halaman LaporanTransaksiPage)
 reportsRouter.get('/sales', requireOutlet, async (req, res, next) => {

@@ -1,6 +1,7 @@
 import { db } from '../../db/client.js';
-import { eq, and, isNull, count } from 'drizzle-orm';
+import { eq, and, isNull, count, sql } from 'drizzle-orm';
 import { outlets, warehouses, subscriptions } from '../../db/schema/identity.js';
+import { HttpError } from '../../middleware/errorHandler.js';
 
 export const outletsRepo = {
   async listByOrg(organizationId: string) {
@@ -37,6 +38,27 @@ export const outletsRepo = {
     data: { name: string; businessType: any; address?: string | undefined; city?: string | undefined; phone?: string | undefined }
   ) {
     return await db.transaction(async (tx) => {
+      const [sub] = await tx
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.organizationId, organizationId))
+        .for('update');
+
+      const [countRow] = await tx
+        .select({ total: count() })
+        .from(outlets)
+        .where(and(eq(outlets.organizationId, organizationId), isNull(outlets.deletedAt)));
+
+      const currentCount = Number(countRow?.total || 0);
+      const limit = sub?.outletLimit || 1;
+      if (currentCount >= limit) {
+        throw new HttpError(
+          403,
+          'FORBIDDEN',
+          `Batas maksimal outlet (${limit}) untuk paket Anda telah tercapai. Upgrade paket untuk menambah outlet.`
+        );
+      }
+
       const [outlet] = await tx
         .insert(outlets)
         .values({

@@ -1,4 +1,6 @@
 import { staffRepo } from './staff.repo.js';
+import { outletsRepo } from '../outlets/outlets.repo.js';
+import { billingService } from '../billing/billing.service.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 import { getWitaDateString } from '../../lib/time.js';
 import type { RequestContext } from '../../types/express.d.js';
@@ -24,6 +26,23 @@ export const staffService = {
       throw new HttpError(400, 'OUTLET_REQUIRED', 'Outlet ID wajib ditentukan');
     }
 
+    const outlet = await outletsRepo.getById(ctx.organizationId, targetOutletId);
+    if (!outlet) {
+      throw new HttpError(404, 'NOT_FOUND', 'Outlet tidak ditemukan pada organisasi ini');
+    }
+
+    const staffLimit = billingService.getStaffLimit(ctx.planCode);
+    if (staffLimit !== null) {
+      const currentActive = await staffRepo.countActiveStaff(ctx.organizationId);
+      if (currentActive >= staffLimit) {
+        throw new HttpError(
+          403,
+          'FORBIDDEN',
+          `Batas kuota staf (${staffLimit}) untuk paket ${ctx.planCode} telah tercapai. Upgrade paket untuk menambah staf.`
+        );
+      }
+    }
+
     return await staffRepo.create(ctx.organizationId, {
       name: body.fullName || body.name,
       staffRole: body.role || body.staffRole,
@@ -37,8 +56,16 @@ export const staffService = {
     });
   },
 
-  async updateStaff(organizationId: string, id: string, body: any) {    const existing = await staffRepo.getById(organizationId, id);
+  async updateStaff(organizationId: string, id: string, body: any) {
+    const existing = await staffRepo.getById(organizationId, id);
     if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Staf tidak ditemukan');
+
+    if (body.outletId) {
+      const outlet = await outletsRepo.getById(organizationId, body.outletId);
+      if (!outlet) {
+        throw new HttpError(404, 'NOT_FOUND', 'Outlet tidak ditemukan pada organisasi ini');
+      }
+    }
 
     const updateData = {
       ...(body.fullName !== undefined || body.name !== undefined ? { name: body.fullName || body.name } : {}),

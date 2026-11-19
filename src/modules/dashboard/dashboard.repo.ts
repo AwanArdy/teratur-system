@@ -41,18 +41,22 @@ export const dashboardRepo = {
     };
   },
 
-  async getMonthlyChartData(organizationId: string, outletId: string | null) {
+  async getMonthlyChartData(organizationId: string, outletId: string | null, includeOpex: boolean = true) {
     const baseConditions = [
       eq(dailyMetrics.organizationId, organizationId),
       ...(outletId ? [eq(dailyMetrics.outletId, outletId)] : []),
     ];
+
+    const profitExpr = includeOpex
+      ? sql<number>`COALESCE(SUM(${dailyMetrics.omsetNetIdr} - ${dailyMetrics.cogsIdr} - ${dailyMetrics.opexIdr}), 0)::float`
+      : sql<number>`COALESCE(SUM(${dailyMetrics.omsetNetIdr} - ${dailyMetrics.cogsIdr}), 0)::float`;
 
     return await db
       .select({
         month: sql<string>`SUBSTRING(${dailyMetrics.date} FROM 1 FOR 7)`,
         omsetIdr: sql<number>`COALESCE(SUM(${dailyMetrics.omsetNetIdr}), 0)::float`,
         cogsIdr: sql<number>`COALESCE(SUM(${dailyMetrics.cogsIdr}), 0)::float`,
-        profitIdr: sql<number>`COALESCE(SUM(${dailyMetrics.omsetNetIdr} - ${dailyMetrics.cogsIdr} - ${dailyMetrics.opexIdr}), 0)::float`,
+        profitIdr: profitExpr,
       })
       .from(dailyMetrics)
       .where(and(...baseConditions))

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { db } from '../../db/client.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { sales, saleItems } from '../../db/schema/sales.js';
@@ -8,6 +9,7 @@ import { HttpError } from '../../lib/httpError.js';
 import { generateDocumentNo } from '../../lib/documentNo.js';
 import { formatWitaDisplay, getWitaDateString, isSameWitaDay } from '../../lib/time.js';
 import { salesRepo } from './sales.repo.js';
+import { staffRepo } from '../staff/staff.repo.js';
 import type { RequestContext } from '../../types/express.d.ts';
 import type { CreateSaleInput, ListSalesQuery } from './sales.schemas.js';
 
@@ -15,12 +17,27 @@ export const salesService = {
   async createSale(ctx: RequestContext, input: CreateSaleInput) {
     const { organizationId, activeOutletId, userId, staffId } = ctx;
 
+    if (ctx.planStatus === 'expired') {
+      throw new HttpError(
+        403,
+        'PLAN_REQUIRED',
+        'Masa berlangganan Anda telah berakhir. Perpanjang langganan untuk mencatat transaksi penjualan.'
+      );
+    }
+
     if (!activeOutletId) {
       throw new HttpError(
         400,
         'OUTLET_REQUIRED',
         'Outlet aktif harus ditentukan melalui header X-Outlet-Id'
       );
+    }
+
+    if (input.cashierStaffId) {
+      const cashierStaff = await staffRepo.getById(organizationId, input.cashierStaffId);
+      if (!cashierStaff || cashierStaff.organizationId !== organizationId) {
+        throw new HttpError(404, 'NOT_FOUND', 'Staf kasir tidak ditemukan pada organisasi ini');
+      }
     }
 
     const defaultWarehouse = await salesRepo.getDefaultWarehouse(
@@ -86,6 +103,7 @@ export const salesService = {
     const ingredientMap = new Map(ingredientRows.map((ing) => [ing.id, ing]));
 
     const result = await db.transaction(async (tx) => {
+      const saleId = crypto.randomUUID();
       const noNota = await generateDocumentNo(
         tx,
         organizationId,
@@ -107,6 +125,12 @@ export const salesService = {
 
       for (const item of input.items) {
         const product = productMap.get(item.productId)!;
+        if (item.unitPriceIdr !== undefined && item.unitPriceIdr !== product.sellingPriceIdr) {
+          const isManagerOrOwner = ctx.orgRole === 'owner' || ctx.orgRole === 'admin' || ctx.staffRole === 'manager';
+          if (!isManagerOrOwner) {
+            throw new HttpError(403, 'FORBIDDEN', 'Override harga produk memerlukan izin manager atau owner');
+          }
+        }
         const unitPriceIdr = item.unitPriceIdr ?? product.sellingPriceIdr;
         const lineTotalIdr = Math.round(unitPriceIdr * item.qty);
         subtotalIdr += lineTotalIdr;
@@ -199,7 +223,7 @@ export const salesService = {
               unitCost: unitCost.toFixed(4),
               amountIdr,
               refType: 'sales',
-              refId: sql`gen_random_uuid()`, // temporarily or update refId later
+              refId: saleId,
               actorUserId: userId,
             });
 
@@ -270,7 +294,7 @@ export const salesService = {
             unitCost: unitCost.toFixed(4),
             amountIdr,
             refType: 'sales',
-            refId: sql`gen_random_uuid()`,
+            refId: saleId,
             actorUserId: userId,
           });
 
@@ -292,11 +316,19 @@ export const salesService = {
         });
       }
 
+      if (input.discountIdr > subtotalIdr) {
+        throw new HttpError(400, 'INVALID_DISCOUNT', 'Diskon tidak boleh melebihi subtotal');
+      }
+
       const totalIdr = Math.round(subtotalIdr + input.taxIdr - input.discountIdr);
+      if (totalIdr < 0) {
+        throw new HttpError(400, 'INVALID_TOTAL', 'Total penjualan tidak boleh negatif');
+      }
 
       const [newSale] = await tx
         .insert(sales)
         .values({
+          id: saleId,
           organizationId,
           outletId: activeOutletId,
           warehouseId: defaultWarehouse.id,
@@ -333,18 +365,6 @@ export const salesService = {
         )
         .returning();
 
-      // Update movements refId to saleId
-      await tx
-        .update(stockMovements)
-        .set({ refId: newSale!.id })
-        .where(
-          and(
-            eq(stockMovements.organizationId, organizationId),
-            eq(stockMovements.type, 'sale_out'),
-            eq(stockMovements.actorUserId, userId)
-          )
-        );
-
       if (openShift) {
         if (input.paymentMethod === 'cash') {
           await tx
@@ -352,14 +372,14 @@ export const salesService = {
             .set({
               cashSalesIdr: sql`${cashShifts.cashSalesIdr} + ${totalIdr}`,
             })
-            .where(eq(cashShifts.id, openShift.id));
+            .where(and(eq(cashShifts.id, openShift.id), eq(cashShifts.status, 'open')));
         } else if (input.paymentMethod === 'qris') {
           await tx
             .update(cashShifts)
             .set({
               qrisSalesIdr: sql`${cashShifts.qrisSalesIdr} + ${totalIdr}`,
             })
-            .where(eq(cashShifts.id, openShift.id));
+            .where(and(eq(cashShifts.id, openShift.id), eq(cashShifts.status, 'open')));
         }
       }
 
@@ -565,6 +585,18 @@ export const salesService = {
       );
     }
 
+    // Void policy check (PRD §6.11 US-POS-03 & §8.2)
+    const diffDays = Math.floor(
+      (Date.now() - new Date(sale.soldAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (diffDays > 1 && orgRole !== 'owner') {
+      throw new HttpError(
+        403,
+        'FORBIDDEN',
+        'Pembatalan transaksi setelah D+1 hanya dapat dilakukan oleh Owner'
+      );
+    }
+
     // Cashier role restriction check
     if (orgRole === 'staff' || staffRole === 'cashier') {
       if (!isSameWitaDay(sale.soldAt, new Date())) {
@@ -574,133 +606,91 @@ export const salesService = {
           'Kasir hanya dapat membatalkan transaksi pada hari yang sama'
         );
       }
-    }
-
-    const items = await salesRepo.getSaleItems(organizationId, sale.id);
-    const productIds = [...new Set(items.map((i) => i.productId))];
-    const productRows = await salesRepo.findProductsByIds(
-      organizationId,
-      productIds
-    );
-    const productMap = new Map(productRows.map((p) => [p.id, p]));
-    const recipeRows = await salesRepo.findRecipeLinesForProducts(
-      organizationId,
-      productIds
-    );
-    const recipeMap = new Map<string, typeof recipeRows>();
-    for (const r of recipeRows) {
-      const list = recipeMap.get(r.productId) || [];
-      list.push(r);
-      recipeMap.set(r.productId, list);
+      if (sale.cashShiftId) {
+        const activeShift = await salesRepo.getOpenCashShift(
+          organizationId,
+          activeOutletId
+        );
+        if (!activeShift || activeShift.id !== sale.cashShiftId) {
+          throw new HttpError(
+            403,
+            'FORBIDDEN',
+            'Kasir hanya dapat membatalkan transaksi dalam shift yang sama'
+          );
+        }
+      }
     }
 
     await db.transaction(async (tx) => {
-      await tx
+      const [updatedSale] = await tx
         .update(sales)
         .set({
           status: 'cancelled',
           cancelledAt: new Date(),
           cancelledByUserId: userId,
         })
-        .where(eq(sales.id, sale.id));
+        .where(and(eq(sales.id, sale.id), eq(sales.status, 'paid')))
+        .returning();
 
-      for (const item of items) {
-        const product = productMap.get(item.productId);
-        if (!product) continue;
+      if (!updatedSale) {
+        throw new HttpError(
+          409,
+          'SALE_ALREADY_CANCELLED',
+          'Transaksi penjualan ini sudah dibatalkan'
+        );
+      }
 
-        const itemQty = Number(item.qty);
+      // Reversal akurat berbasis mutasi stok asli saat transaksi (bukan resep hari ini)
+      const movements = await tx
+        .select()
+        .from(stockMovements)
+        .where(
+          and(
+            eq(stockMovements.organizationId, organizationId),
+            eq(stockMovements.refType, 'sales'),
+            eq(stockMovements.refId, sale.id),
+            eq(stockMovements.type, 'sale_out')
+          )
+        );
 
-        if (product.kind === 'made_to_order' || product.kind === 'pre_order') {
-          const lines = recipeMap.get(product.id) || [];
-          for (const line of lines) {
-            const qtyToReturn = Number(line.qty) * itemQty;
-            const stockItemType =
-              line.componentType === 'ingredient' ? 'ingredient' : 'finished_good';
-
-            const [balance] = await tx
-              .select()
-              .from(inventoryBalances)
-              .where(
-                and(
-                  eq(inventoryBalances.warehouseId, sale.warehouseId),
-                  eq(inventoryBalances.itemType, stockItemType),
-                  eq(inventoryBalances.itemId, line.componentId)
-                )
-              )
-              .for('update');
-
-            if (balance) {
-              const newQtyOnHand = Number(balance.qtyOnHand) + qtyToReturn;
-              await tx
-                .update(inventoryBalances)
-                .set({
-                  qtyOnHand: newQtyOnHand.toFixed(4),
-                  updatedAt: new Date(),
-                })
-                .where(eq(inventoryBalances.id, balance.id));
-
-              const unitCost = Number(balance.avgUnitCost);
-              const amountIdr = Math.round(qtyToReturn * unitCost);
-
-              await tx.insert(stockMovements).values({
-                organizationId,
-                outletId: activeOutletId,
-                warehouseId: sale.warehouseId,
-                itemType: stockItemType,
-                itemId: line.componentId,
-                type: 'sale_void_in',
-                qty: qtyToReturn.toFixed(4),
-                unitCost: unitCost.toFixed(4),
-                amountIdr,
-                refType: 'sales',
-                refId: sale.id,
-                actorUserId: userId,
-              });
-            }
-          }
-        } else if (product.kind === 'finished_good') {
-          const qtyToReturn = itemQty;
-
-          const [balance] = await tx
-            .select()
-            .from(inventoryBalances)
-            .where(
-              and(
-                eq(inventoryBalances.warehouseId, sale.warehouseId),
-                eq(inventoryBalances.itemType, 'finished_good'),
-                eq(inventoryBalances.itemId, product.id)
-              )
+      for (const mov of movements) {
+        const qtyToReturn = Number(mov.qty);
+        const [balance] = await tx
+          .select()
+          .from(inventoryBalances)
+          .where(
+            and(
+              eq(inventoryBalances.warehouseId, mov.warehouseId),
+              eq(inventoryBalances.itemType, mov.itemType),
+              eq(inventoryBalances.itemId, mov.itemId)
             )
-            .for('update');
+          )
+          .for('update');
 
-          if (balance) {
-            const newQtyOnHand = Number(balance.qtyOnHand) + qtyToReturn;
-            await tx
-              .update(inventoryBalances)
-              .set({
-                qtyOnHand: newQtyOnHand.toFixed(4),
-                updatedAt: new Date(),
-              })
-              .where(eq(inventoryBalances.id, balance.id));
+        if (balance) {
+          const newQtyOnHand = Number(balance.qtyOnHand) + qtyToReturn;
+          await tx
+            .update(inventoryBalances)
+            .set({
+              qtyOnHand: newQtyOnHand.toFixed(4),
+              updatedAt: new Date(),
+            })
+            .where(eq(inventoryBalances.id, balance.id));
 
-            const unitCost = Number(balance.avgUnitCost);
-            const amountIdr = Math.round(qtyToReturn * unitCost);
-
-            await tx.insert(stockMovements).values({
-              organizationId,
-              outletId: activeOutletId,
-              warehouseId: sale.warehouseId,
-              itemType: 'finished_good',
-              itemId: product.id,
-              type: 'sale_void_in',
-              qty: qtyToReturn.toFixed(4),
-              unitCost: unitCost.toFixed(4),
-              amountIdr,
-              refType: 'sales',
-              refId: sale.id,
-              actorUserId: userId,
-            });
-          }
+          await tx.insert(stockMovements).values({
+            organizationId,
+            outletId: activeOutletId,
+            warehouseId: mov.warehouseId,
+            itemType: mov.itemType,
+            itemId: mov.itemId,
+            type: 'sale_void_in',
+            qty: qtyToReturn.toFixed(4),
+            unitCost: mov.unitCost,
+            amountIdr: mov.amountIdr,
+            refType: 'sales',
+            refId: sale.id,
+            actorUserId: userId,
+          });
         }
       }
 
@@ -722,7 +712,7 @@ export const salesService = {
           )
         );
 
-      // Reverse cash shifts if attached
+      // Reverse cash shifts if attached and still open
       if (sale.cashShiftId) {
         if (sale.paymentMethod === 'cash') {
           await tx
@@ -730,14 +720,14 @@ export const salesService = {
             .set({
               cashSalesIdr: sql`GREATEST(0, ${cashShifts.cashSalesIdr} - ${sale.totalIdr})`,
             })
-            .where(eq(cashShifts.id, sale.cashShiftId));
+            .where(and(eq(cashShifts.id, sale.cashShiftId), eq(cashShifts.status, 'open')));
         } else if (sale.paymentMethod === 'qris') {
           await tx
             .update(cashShifts)
             .set({
               qrisSalesIdr: sql`GREATEST(0, ${cashShifts.qrisSalesIdr} - ${sale.totalIdr})`,
             })
-            .where(eq(cashShifts.id, sale.cashShiftId));
+            .where(and(eq(cashShifts.id, sale.cashShiftId), eq(cashShifts.status, 'open')));
         }
       }
     });

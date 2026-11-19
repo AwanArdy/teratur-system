@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
+import { authorizeStaff } from '../../middleware/authorize.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
+import { requirePlan } from '../../middleware/requirePlan.js';
 import { requireIdempotencyKey } from '../../middleware/idempotency.js';
 import { salesService } from './sales.service.js';
 import { createSaleSchema, listSalesQuerySchema } from './sales.schemas.js';
@@ -9,7 +11,7 @@ export const salesRouter = Router();
 salesRouter.use(authenticate);
 salesRouter.use(requireOutlet);
 
-salesRouter.post('/', requireIdempotencyKey, async (req, res, next) => {
+salesRouter.post('/', requirePlan('starter'), authorizeStaff(['manager', 'cashier']), requireIdempotencyKey, async (req, res, next) => {
   try {
     const body = createSaleSchema.parse(req.body);
     const result = await salesService.createSale(req.ctx!, body);
@@ -53,7 +55,7 @@ salesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-salesRouter.post('/:id/cancel', async (req, res, next) => {
+salesRouter.post('/:id/cancel', authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const { id } = req.params as { id: string };
     const result = await salesService.cancelSale(req.ctx!, id);

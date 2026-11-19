@@ -7,7 +7,9 @@ import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 import { wasteLogs } from '../../db/schema/inventory.js';
 import { dailyMetrics } from '../../db/schema/ops.js';
-import { sql, eq, and } from 'drizzle-orm';
+import { warehouses } from '../../db/schema/identity.js';
+import { ingredients, products } from '../../db/schema/catalog.js';
+import { sql, eq, and, isNull } from 'drizzle-orm';
 
 export const wastesService = {
   async listWastes(
@@ -25,10 +27,38 @@ export const wastesService = {
     }
 
     let warehouseId = body.warehouseId;
-    if (!warehouseId) {
+    if (warehouseId) {
+      const [wh] = await db
+        .select()
+        .from(warehouses)
+        .where(
+          and(
+            eq(warehouses.id, warehouseId),
+            eq(warehouses.organizationId, ctx.organizationId),
+            eq(warehouses.outletId, activeOutletId)
+          )
+        );
+      if (!wh) {
+        throw new HttpError(404, 'NOT_FOUND', 'Gudang tidak ditemukan pada outlet ini');
+      }
+    } else {
       const defaultWh = await inventoryRepo.getDefaultWarehouse(ctx.organizationId, activeOutletId);
       if (!defaultWh) throw new HttpError(404, 'NOT_FOUND', 'Gudang default tidak ditemukan');
       warehouseId = defaultWh.id;
+    }
+
+    if (body.itemType === 'ingredient') {
+      const [ing] = await db
+        .select()
+        .from(ingredients)
+        .where(and(eq(ingredients.id, body.itemId), eq(ingredients.organizationId, ctx.organizationId), isNull(ingredients.deletedAt)));
+      if (!ing) throw new HttpError(404, 'NOT_FOUND', 'Bahan baku tidak ditemukan');
+    } else {
+      const [prod] = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.id, body.itemId), eq(products.organizationId, ctx.organizationId), isNull(products.deletedAt)));
+      if (!prod) throw new HttpError(404, 'NOT_FOUND', 'Produk tidak ditemukan');
     }
 
     return await db.transaction(async (tx) => {

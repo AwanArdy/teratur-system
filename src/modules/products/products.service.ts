@@ -1,4 +1,7 @@
 import { productsRepo } from './products.repo.js';
+import { db } from '../../db/client.js';
+import { ingredients, products } from '../../db/schema/catalog.js';
+import { eq, and, isNull } from 'drizzle-orm';
 import { HttpError } from '../../middleware/errorHandler.js';
 
 export const productsService = {
@@ -33,12 +36,35 @@ export const productsService = {
     };
   },
 
+  async validateRecipeComponents(
+    organizationId: string,
+    recipe?: Array<{ componentType: 'ingredient' | 'product'; componentId: string; qty: number }>
+  ) {
+    if (!recipe || recipe.length === 0) return;
+    for (const item of recipe) {
+      if (item.componentType === 'ingredient') {
+        const [ing] = await db
+          .select({ id: ingredients.id })
+          .from(ingredients)
+          .where(and(eq(ingredients.id, item.componentId), eq(ingredients.organizationId, organizationId), isNull(ingredients.deletedAt)));
+        if (!ing) throw new HttpError(404, 'NOT_FOUND', `Bahan baku resep tidak ditemukan`);
+      } else {
+        const [prod] = await db
+          .select({ id: products.id })
+          .from(products)
+          .where(and(eq(products.id, item.componentId), eq(products.organizationId, organizationId), isNull(products.deletedAt)));
+        if (!prod) throw new HttpError(404, 'NOT_FOUND', `Produk resep tidak ditemukan`);
+      }
+    }
+  },
+
   async calculateHpp(
     organizationId: string,
     outletId: string | null,
     sellingPriceIdr: number,
     recipe: Array<{ componentType: 'ingredient' | 'product'; componentId: string; qty: number }>
   ) {
+    await this.validateRecipeComponents(organizationId, recipe);
     const unitCosts = await productsRepo.getComponentUnitCosts(
       organizationId,
       outletId,
@@ -77,6 +103,9 @@ export const productsService = {
   },
 
   async createProduct(organizationId: string, body: any) {
+    if (body.recipe) {
+      await this.validateRecipeComponents(organizationId, body.recipe);
+    }
     if (body.sku) {
       const existingSku = await productsRepo.getBySku(organizationId, body.sku);
       if (existingSku) {
@@ -96,6 +125,10 @@ export const productsService = {
       if (duplicateSku && duplicateSku.id !== id) {
         throw new HttpError(409, 'CONFLICT', `SKU '${body.sku}' sudah digunakan`);
       }
+    }
+
+    if (body.recipe) {
+      await this.validateRecipeComponents(organizationId, body.recipe);
     }
 
     const updated = await productsRepo.updateWithRecipe(organizationId, id, body);

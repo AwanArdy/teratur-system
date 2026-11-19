@@ -28,10 +28,25 @@ export const billingService = {
         waste: isGrowthOrAbove,
         rop: isGrowthOrAbove,
         aiDailyLimit: this.getAiLimit(sub.planCode),
-        staffLimit: sub.planCode === 'starter' || sub.planCode === 'free_trial' ? 5 : null,
+        staffLimit: this.getStaffLimit(sub.planCode),
         nettProfitIncludesOpex: isGrowthOrAbove,
       },
     };
+  },
+
+  getStaffLimit(planCode: PlanCode): number | null {
+    switch (planCode) {
+      case 'free_trial':
+      case 'starter':
+        return 5;
+      case 'growth':
+        return 25;
+      case 'pro':
+      case 'business':
+        return null;
+      default:
+        return 5;
+    }
   },
 
   getAiLimit(planCode: PlanCode): number {

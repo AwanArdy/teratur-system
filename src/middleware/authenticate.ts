@@ -56,17 +56,29 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     .select({ id: outlets.id })
     .from(outlets)
     .where(and(eq(outlets.organizationId, payload.org), isNull(outlets.deletedAt)));
-
   const outletIds = allOutlets.map((o) => o.id);
-  const activeOutletHeader = req.headers['x-outlet-id'] as string | undefined;
-  const activeOutletId = activeOutletHeader && outletIds.includes(activeOutletHeader)
-    ? activeOutletHeader
-    : member.defaultOutletId || outletIds[0] || null;
 
   const [staffMember] = await db
     .select()
     .from(staff)
-    .where(and(eq(staff.userId, user.id), eq(staff.organizationId, payload.org)));
+    .where(and(eq(staff.userId, user.id), eq(staff.organizationId, payload.org), isNull(staff.deletedAt)));
+
+  // PRD §8.2 & DESIGN §5.2: Owner & Admin dapat mengakses semua outlet organisasi.
+  // Staf operasional (manager, kasir, dll) hanya berhak atas outlet yang ditugaskan kepada mereka.
+  let permittedOutletIds: string[];
+  if (member.orgRole === 'owner' || member.orgRole === 'admin') {
+    permittedOutletIds = outletIds;
+  } else {
+    const assignedOutletId = staffMember?.outletId || member.defaultOutletId;
+    permittedOutletIds = assignedOutletId && outletIds.includes(assignedOutletId)
+      ? [assignedOutletId]
+      : [];
+  }
+
+  const activeOutletHeader = req.headers['x-outlet-id'] as string | undefined;
+  const activeOutletId = activeOutletHeader && permittedOutletIds.includes(activeOutletHeader)
+    ? activeOutletHeader
+    : (activeOutletHeader ? null : (permittedOutletIds[0] || null));
 
   req.ctx = {
     requestId: (req.headers['x-request-id'] as string) || 'unknown',
@@ -75,7 +87,7 @@ export const authenticate = async (req: Request, _res: Response, next: NextFunct
     orgRole: member.orgRole,
     staffRole: staffMember?.staffRole || null,
     staffId: staffMember?.id || null,
-    outletIds,
+    outletIds: permittedOutletIds,
     activeOutletId,
     planCode: sub?.planCode || 'starter',
     planStatus: sub?.status || 'active',

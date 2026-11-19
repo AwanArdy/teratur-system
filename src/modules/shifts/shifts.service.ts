@@ -1,5 +1,8 @@
 import { shiftsRepo } from './shifts.repo.js';
 import { staffRepo } from '../staff/staff.repo.js';
+import { db } from '../../db/client.js';
+import { cashShifts } from '../../db/schema/staff.js';
+import { eq, and } from 'drizzle-orm';
 import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 
@@ -32,7 +35,12 @@ export const shiftsService = {
     }
 
     let staffId = body.cashierStaffId || body.staffId;
-    if (!staffId) {
+    if (staffId) {
+      const staffRecord = await staffRepo.getById(ctx.organizationId, staffId);
+      if (!staffRecord || staffRecord.organizationId !== ctx.organizationId || (staffRecord.outletId && staffRecord.outletId !== activeOutletId)) {
+        throw new HttpError(404, 'NOT_FOUND', 'Staf kasir tidak ditemukan pada outlet ini');
+      }
+    } else {
       const existingStaff = await staffRepo.getByUserId(ctx.organizationId, ctx.userId);
       if (existingStaff) {
         staffId = existingStaff.id;
@@ -55,27 +63,63 @@ export const shiftsService = {
     const activeOutletId = ctx.activeOutletId;
     if (!activeOutletId) throw new HttpError(400, 'OUTLET_REQUIRED', 'Header X-Outlet-Id wajib diisi');
 
-    const currentShift = shiftId
-      ? await shiftsRepo.getById(ctx.organizationId, shiftId)
-      : await shiftsRepo.getActiveShift(ctx.organizationId, activeOutletId);
-    if (!currentShift || (currentShift as any).status !== 'open') {
-      throw new HttpError(404, 'NOT_FOUND', 'Tidak ada shift aktif yang perlu ditutup');
-    }
+    return await db.transaction(async (tx) => {
+      const whereConds = shiftId
+        ? and(eq(cashShifts.id, shiftId), eq(cashShifts.organizationId, ctx.organizationId))
+        : and(
+            eq(cashShifts.organizationId, ctx.organizationId),
+            eq(cashShifts.outletId, activeOutletId),
+            eq(cashShifts.status, 'open')
+          );
 
-    const startingCash = Number(currentShift.startingCashIdr);
-    const cashSales = Number(currentShift.cashSalesIdr);
-    const expectedCashIdr = startingCash + cashSales;
-    // DESIGN memakai actualPhysicalCashIdr; field lama endingCashIdr tetap didukung
-    const endingCashIdr = body.actualPhysicalCashIdr ?? body.endingCashIdr;
-    const varianceIdr = endingCashIdr - expectedCashIdr;
+      const [currentShift] = await tx
+        .select()
+        .from(cashShifts)
+        .where(whereConds)
+        .for('update');
 
-    const status: 'balanced' | 'variance' = varianceIdr === 0 ? 'balanced' : 'variance';
+      if (!currentShift || currentShift.status !== 'open') {
+        throw new HttpError(404, 'NOT_FOUND', 'Tidak ada shift aktif yang perlu ditutup');
+      }
 
-    return await shiftsRepo.close(currentShift.id, {
-      actualPhysicalCashIdr: endingCashIdr,
-      differenceIdr: varianceIdr,
-      status,
-      ...(body.notes ? { notes: body.notes } : {}),
+      if (ctx.staffRole === 'cashier' && ctx.orgRole !== 'owner' && ctx.orgRole !== 'admin') {
+        const isOwnShift =
+          (ctx.staffId && currentShift.staffId === ctx.staffId) ||
+          currentShift.openedByUserId === ctx.userId;
+        if (!isOwnShift) {
+          throw new HttpError(
+            403,
+            'FORBIDDEN',
+            'Kasir hanya dapat menutup shift miliknya sendiri'
+          );
+        }
+      }
+
+      const startingCash = Number(currentShift.startingCashIdr);
+      const cashSales = Number(currentShift.cashSalesIdr);
+      const expectedCashIdr = startingCash + cashSales;
+      const endingCashIdr = body.actualPhysicalCashIdr ?? body.endingCashIdr;
+      const varianceIdr = endingCashIdr - expectedCashIdr;
+
+      const status: 'balanced' | 'variance' = varianceIdr === 0 ? 'balanced' : 'variance';
+
+      const [closed] = await tx
+        .update(cashShifts)
+        .set({
+          actualPhysicalCashIdr: endingCashIdr,
+          differenceIdr: varianceIdr,
+          status,
+          ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          closedAt: new Date(),
+        })
+        .where(and(eq(cashShifts.id, currentShift.id), eq(cashShifts.status, 'open')))
+        .returning();
+
+      if (!closed) {
+        throw new HttpError(409, 'CONFLICT', 'Shift sudah ditutup');
+      }
+
+      return closed;
     });
   },
 };

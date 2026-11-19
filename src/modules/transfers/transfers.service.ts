@@ -155,18 +155,41 @@ export const transfersService = {
   },
 
   async receiveTransfer(ctx: RequestContext, id: string) {
-    const transfer = await transfersRepo.getTransferById(ctx.organizationId, id);
-    if (!transfer) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+    const [toWhLookup] = await db
+      .select({ toWarehouseId: stockTransfers.toWarehouseId })
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.organizationId, ctx.organizationId)));
+    if (!toWhLookup) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
 
-    if (transfer.status !== 'in_transit') {
-      throw new HttpError(409, 'CONFLICT', `Transfer ini sudah ${transfer.status}`);
-    }
-
-    const [toWh] = await db.select().from(warehouses).where(eq(warehouses.id, transfer.toWarehouseId));
+    const [toWh] = await db.select().from(warehouses).where(eq(warehouses.id, toWhLookup.toWarehouseId));
     if (!toWh) throw new HttpError(404, 'NOT_FOUND', 'Gudang tujuan tidak ditemukan');
 
+    const transferData = await transfersRepo.getTransferById(ctx.organizationId, id);
+    if (!transferData) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+
     return await db.transaction(async (tx) => {
-      for (const line of transfer.lines) {
+      const [header] = await tx
+        .select()
+        .from(stockTransfers)
+        .where(and(eq(stockTransfers.id, id), eq(stockTransfers.organizationId, ctx.organizationId)))
+        .for('update');
+
+      if (!header) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+      if (header.status !== 'in_transit') {
+        throw new HttpError(409, 'CONFLICT', `Transfer ini sudah ${header.status}`);
+      }
+
+      const [updated] = await tx
+        .update(stockTransfers)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(and(eq(stockTransfers.id, header.id), eq(stockTransfers.status, 'in_transit')))
+        .returning();
+
+      if (!updated) {
+        throw new HttpError(409, 'CONFLICT', 'Transfer sudah diproses oleh permintaan lain');
+      }
+
+      for (const line of transferData.lines) {
         const lineQty = Number(line.qty);
         const lineUnitCost = Number(line.unitCost);
 
@@ -206,38 +229,52 @@ export const transfersService = {
           unitCost: lineUnitCost,
           amountIdr: roundMoney(lineQty * lineUnitCost),
           refType: 'transfer',
-          refId: transfer.id,
-          notes: `Penerimaan transfer nota ${transfer.noTransfer}`,
+          refId: header.id,
+          notes: `Penerimaan transfer nota ${header.noTransfer}`,
           actorUserId: ctx.userId,
         });
       }
-
-      const [updated] = await tx
-        .update(stockTransfers)
-        .set({ status: 'completed', completedAt: new Date() })
-        .where(eq(stockTransfers.id, transfer.id))
-        .returning();
 
       return updated;
     });
   },
 
   async cancelTransfer(ctx: RequestContext, id: string) {
-    const transfer = await transfersRepo.getTransferById(ctx.organizationId, id);
-    if (!transfer) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+    const [fromWhLookup] = await db
+      .select({ fromWarehouseId: stockTransfers.fromWarehouseId })
+      .from(stockTransfers)
+      .where(and(eq(stockTransfers.id, id), eq(stockTransfers.organizationId, ctx.organizationId)));
+    if (!fromWhLookup) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
 
-    if (transfer.status !== 'in_transit') {
-      throw new HttpError(409, 'CONFLICT', `Transfer ini sudah ${transfer.status}`);
-    }
-
-    const [fromWh] = await db
-      .select()
-      .from(warehouses)
-      .where(eq(warehouses.id, transfer.fromWarehouseId));
+    const [fromWh] = await db.select().from(warehouses).where(eq(warehouses.id, fromWhLookup.fromWarehouseId));
     if (!fromWh) throw new HttpError(404, 'NOT_FOUND', 'Gudang asal tidak ditemukan');
 
+    const transferData = await transfersRepo.getTransferById(ctx.organizationId, id);
+    if (!transferData) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+
     return await db.transaction(async (tx) => {
-      for (const line of transfer.lines) {
+      const [header] = await tx
+        .select()
+        .from(stockTransfers)
+        .where(and(eq(stockTransfers.id, id), eq(stockTransfers.organizationId, ctx.organizationId)))
+        .for('update');
+
+      if (!header) throw new HttpError(404, 'NOT_FOUND', 'Dokumen transfer tidak ditemukan');
+      if (header.status !== 'in_transit') {
+        throw new HttpError(409, 'CONFLICT', `Transfer ini sudah ${header.status}`);
+      }
+
+      const [updated] = await tx
+        .update(stockTransfers)
+        .set({ status: 'cancelled', cancelledAt: new Date() })
+        .where(and(eq(stockTransfers.id, header.id), eq(stockTransfers.status, 'in_transit')))
+        .returning();
+
+      if (!updated) {
+        throw new HttpError(409, 'CONFLICT', 'Transfer sudah diproses oleh permintaan lain');
+      }
+
+      for (const line of transferData.lines) {
         const lineQty = Number(line.qty);
         const lineUnitCost = Number(line.unitCost);
 
@@ -273,17 +310,11 @@ export const transfersService = {
           unitCost: lineUnitCost,
           amountIdr: roundMoney(lineQty * lineUnitCost),
           refType: 'transfer_cancel',
-          refId: transfer.id,
-          notes: `Pengembalian pembatalan transfer ${transfer.noTransfer}`,
+          refId: header.id,
+          notes: `Pengembalian pembatalan transfer ${header.noTransfer}`,
           actorUserId: ctx.userId,
         });
       }
-
-      const [updated] = await tx
-        .update(stockTransfers)
-        .set({ status: 'cancelled', cancelledAt: new Date() })
-        .where(eq(stockTransfers.id, transfer.id))
-        .returning();
 
       return updated;
     });

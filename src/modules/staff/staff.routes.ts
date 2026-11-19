@@ -4,12 +4,16 @@ import { authorize } from '../../middleware/authorize.js';
 import { staffService } from './staff.service.js';
 import { createStaffSchema, updateStaffSchema } from './staff.schemas.js';
 import { paginationSchema } from '../../lib/pagination.js';
+import { HttpError } from '../../middleware/errorHandler.js';
 
 export const staffRouter = Router();
 staffRouter.use(authenticate);
 
 staffRouter.get('/', async (req, res, next) => {
   try {
+    if (req.ctx!.orgRole === 'staff' && req.ctx!.staffRole !== 'manager') {
+      throw new HttpError(403, 'FORBIDDEN', 'Hanya Owner, Admin, atau Store Manager yang dapat mengakses daftar staf');
+    }
     const query = paginationSchema.parse(req.query);
     const result = await staffService.listStaff(
       req.ctx!.organizationId,
@@ -46,6 +50,9 @@ staffRouter.get('/payroll', notImplemented);
 
 staffRouter.get('/:id', async (req, res, next) => {
   try {
+    if (req.ctx!.orgRole === 'staff' && req.ctx!.staffRole !== 'manager') {
+      throw new HttpError(403, 'FORBIDDEN', 'Hanya Owner, Admin, atau Store Manager yang dapat mengakses data staf');
+    }
     const { id } = req.params as { id: string };
     const result: any = await staffService.getStaffById(req.ctx!.organizationId, id);
     const data =

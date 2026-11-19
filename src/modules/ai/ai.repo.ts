@@ -7,7 +7,8 @@ import { expenses } from "../../db/schema/expenses.js";
 import { sales, saleItems } from "../../db/schema/sales.js";
 
 export const aiRepo = {
-  async getBusinessContext(organizationId: string, outletId: string | null, dateFrom: string, dateTo: string) {
+  async getBusinessContext(organizationId: string, outletId: string | null, dateFrom: string, dateTo: string, planCode: string = 'starter') {
+    const isGrowthOrAbove = ['growth', 'pro', 'business'].includes(planCode);
     const metricsBase = [
       eq(dailyMetrics.organizationId, organizationId),
       ...(outletId ? [eq(dailyMetrics.outletId, outletId)] : []),
@@ -90,7 +91,7 @@ export const aiRepo = {
 
     const omset = salesSummary?.omsetNetIdr || 0;
     const cogs = salesSummary?.cogsIdr || 0;
-    const opex = salesSummary?.opexIdr || 0;
+    const opex = isGrowthOrAbove ? (salesSummary?.opexIdr || 0) : 0;
     const grossProfit = omset - cogs;
     const nettProfit = grossProfit - opex;
 

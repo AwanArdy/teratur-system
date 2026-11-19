@@ -15,6 +15,7 @@ import {
 } from "../../lib/jwt.js";
 import { HttpError } from "../../middleware/errorHandler.js";
 import { logger } from "../../lib/logger.js";
+import { env } from "../../config/env.js";
 import { 
   organizations, 
   organizationMembers, 
@@ -59,7 +60,9 @@ export const authService = {
       lastSentAt: new Date(),
     });
 
-    logger.info(`[DEV OTP] Email: ${user.email} | OTP Code: ${otpCode}`);
+    if (env.NODE_ENV === 'development' && !env.SMTP_URL) {
+      logger.info(`[DEV OTP] Email: ${user.email} | OTP Code: ${otpCode}`);
+    }
 
     return {
       registrationId: reg.id,
@@ -261,13 +264,11 @@ export const authService = {
 
   async refresh(refreshTokenRaw: string) {
     const hash = hashToken(refreshTokenRaw);
-    const session = await authRepo.findRefreshTokenByHash(hash);
+    const session = await authRepo.consumeRefreshTokenByHash(hash);
 
-    if (!session || session.revokedAt || session.expiresAt < new Date()) {
+    if (!session) {
       throw new HttpError(401, 'UNAUTHORIZED', 'Refresh token tidak valid atau kadaluarsa');
     }
-
-    await authRepo.revokeRefreshToken(session.id);
 
     const newRefreshRaw = generateOpaqueToken();
     const newRefreshHash = hashToken(newRefreshRaw);
@@ -347,7 +348,9 @@ export const authService = {
       expiresAt,
       lastSentAt: new Date(),
     });
-    logger.info(`[DEV OTP RESEND] Email: ${user.email} | OTP Code: ${otpCode}`);
+    if (env.NODE_ENV === 'development' && !env.SMTP_URL) {
+      logger.info(`[DEV OTP RESEND] Email: ${user.email} | OTP Code: ${otpCode}`);
+    }
     return { email: user.email, otpExpiresAt: expiresAt.toISOString() };
   },
 
@@ -362,18 +365,20 @@ export const authService = {
       tokenHash,
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
-    logger.info(`[DEV RESET] Email: ${user.email} | ResetToken: ${raw}`);
+    if (env.NODE_ENV === 'development' && !env.SMTP_URL) {
+      logger.info(`[DEV RESET] Email: ${user.email} | ResetToken: ${raw}`);
+    }
   },
 
   async resetPassword(body: { token: string; newPassword: string }) {
     const tokenHash = hashToken(body.token);
-    const record = await authRepo.findPasswordResetTokenByHash(tokenHash);
-    if (!record || record.consumedAt || new Date(record.expiresAt) < new Date()) {
-      throw new HttpError(400, 'VALIDATION_ERROR', 'Token reset tidak valid atau kadaluarsa');
+    const record = await authRepo.consumePasswordResetTokenByHash(tokenHash);
+    if (!record) {
+      throw new HttpError(400, 'VALIDATION_ERROR', 'Token reset tidak valid atau sudah digunakan/kadaluarsa');
     }
     const passwordHash = await hashPassword(body.newPassword);
     await authRepo.updateUserPassword(record.userId, passwordHash);
-    await authRepo.consumePasswordResetToken(record.id);
+    await authRepo.revokeAllPasswordResetTokens(record.userId);
     await authRepo.revokeAllUserRefreshTokens(record.userId);
   },
 
@@ -386,6 +391,7 @@ export const authService = {
     }
     const passwordHash = await hashPassword(body.newPassword);
     await authRepo.updateUserPassword(userId, passwordHash);
+    await authRepo.revokeAllPasswordResetTokens(userId);
     await authRepo.revokeAllUserRefreshTokens(userId);
   },
 };

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
+import { authorize, authorizeStaff } from '../../middleware/authorize.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { expensesService } from './expenses.service.js';
 import {
@@ -12,7 +12,7 @@ import {
 export const expensesRouter = Router();
 expensesRouter.use(authenticate);
 
-expensesRouter.get('/summary', async (req, res, next) => {
+expensesRouter.get('/summary', authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const result = await expensesService.getSummary(
       req.ctx!.organizationId,
@@ -24,7 +24,7 @@ expensesRouter.get('/summary', async (req, res, next) => {
   }
 });
 
-expensesRouter.get('/', async (req, res, next) => {
+expensesRouter.get('/', authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const query = expensesQuerySchema.parse(req.query);
     const result = await expensesService.listExpenses(
@@ -43,7 +43,7 @@ expensesRouter.get('/', async (req, res, next) => {
   }
 });
 
-expensesRouter.get('/:id', async (req, res, next) => {
+expensesRouter.get('/:id', authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const { id } = req.params as { id: string };
     const result = await expensesService.getExpenseById(req.ctx!.organizationId, id);
@@ -53,7 +53,7 @@ expensesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
-expensesRouter.post('/', requireOutlet, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+expensesRouter.post('/', requireOutlet, authorizeStaff(['manager']), async (req, res, next) => {
   try {
     const body = createExpenseSchema.parse(req.body);
     const result = await expensesService.createExpense(req.ctx!, body);

@@ -16,6 +16,7 @@ import {
 } from './schema/index.js';
 import { hashPassword } from '../lib/password.js';
 import { logger } from '../lib/logger.js';
+import { env } from '../config/env.js';
 
 type SeedIngredient = {
   sku: string;
@@ -460,6 +461,11 @@ const SEED_PRODUCTS: SeedProduct[] = [
 ];
 
 export const seed = async () => {
+  if (env.NODE_ENV === 'production' || !env.SEED_DEMO) {
+    logger.warn('Seed demo dinonaktifkan di environment production atau ketika SEED_DEMO=false.');
+    return;
+  }
+
   logger.info('Memulai seed database PostgreSQL (Coffee Shop Indonesia)...');
 
   const demoEmail = 'kasir@teratur.id';
@@ -673,7 +679,6 @@ export const seed = async () => {
     logger.info(
       {
         email: demoEmail,
-        password: 'password123',
         outletId: outlet!.id,
         ingredientsCount: SEED_INGREDIENTS.length,
         productsCount: SEED_PRODUCTS.length,

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
+import { authorize, authorizeStaff } from '../../middleware/authorize.js';
 import { requireOutlet } from '../../middleware/requireOutlet.js';
 import { shiftsService } from './shifts.service.js';
 import { openShiftSchema, closeShiftSchema } from './shifts.schemas.js';
@@ -39,7 +39,7 @@ shiftsRouter.get('/', async (req, res, next) => {
   }
 });
 
-shiftsRouter.post('/open', requireOutlet, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+shiftsRouter.post('/open', requireOutlet, authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const body = openShiftSchema.parse(req.body);
     const result = await shiftsService.openShift(req.ctx!, body);
@@ -49,7 +49,7 @@ shiftsRouter.post('/open', requireOutlet, authorize('owner', 'admin', 'staff'), 
   }
 });
 
-shiftsRouter.post('/close', requireOutlet, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+shiftsRouter.post('/close', requireOutlet, authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const body = closeShiftSchema.parse(req.body);
     const result = await shiftsService.closeShift(req.ctx!, body);
@@ -60,7 +60,7 @@ shiftsRouter.post('/close', requireOutlet, authorize('owner', 'admin', 'staff'),
 });
 
 // Alias kontrak DESIGN §11.13: POST /shifts/:id/close
-shiftsRouter.post('/:id/close', requireOutlet, authorize('owner', 'admin', 'staff'), async (req, res, next) => {
+shiftsRouter.post('/:id/close', requireOutlet, authorizeStaff(['manager', 'cashier']), async (req, res, next) => {
   try {
     const { id } = req.params as { id: string };
     const body = closeShiftSchema.parse(req.body);

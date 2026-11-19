@@ -5,7 +5,9 @@ import { roundMoney } from '../../lib/money.js';
 import { HttpError } from '../../middleware/errorHandler.js';
 import type { RequestContext } from '../../types/express.d.js';
 import { stockOpnames } from '../../db/schema/inventory.js';
-import { eq } from 'drizzle-orm';
+import { warehouses } from '../../db/schema/identity.js';
+import { ingredients, products } from '../../db/schema/catalog.js';
+import { eq, and, isNull } from 'drizzle-orm';
 
 export const opnamesService = {
   async listOpnames(
@@ -23,10 +25,36 @@ export const opnamesService = {
     }
 
     let warehouseId = body.warehouseId;
-    if (!warehouseId) {
+    if (warehouseId) {
+      const [wh] = await db
+        .select()
+        .from(warehouses)
+        .where(
+          and(
+            eq(warehouses.id, warehouseId),
+            eq(warehouses.organizationId, ctx.organizationId),
+            eq(warehouses.outletId, activeOutletId)
+          )
+        );
+      if (!wh) throw new HttpError(404, 'NOT_FOUND', 'Gudang tidak ditemukan pada outlet ini');
+    } else {
       const defaultWh = await inventoryRepo.getDefaultWarehouse(ctx.organizationId, activeOutletId);
       if (!defaultWh) throw new HttpError(404, 'NOT_FOUND', 'Gudang default tidak ditemukan');
       warehouseId = defaultWh.id;
+    }
+
+    if (body.itemType === 'ingredient') {
+      const [ing] = await db
+        .select()
+        .from(ingredients)
+        .where(and(eq(ingredients.id, body.itemId), eq(ingredients.organizationId, ctx.organizationId), isNull(ingredients.deletedAt)));
+      if (!ing) throw new HttpError(404, 'NOT_FOUND', 'Bahan baku tidak ditemukan');
+    } else {
+      const [prod] = await db
+        .select()
+        .from(products)
+        .where(and(eq(products.id, body.itemId), eq(products.organizationId, ctx.organizationId), isNull(products.deletedAt)));
+      if (!prod) throw new HttpError(404, 'NOT_FOUND', 'Produk tidak ditemukan');
     }
 
     // Ambil Snapshot Qty Sistem
@@ -63,14 +91,19 @@ export const opnamesService = {
   },
 
   async approveOpname(ctx: RequestContext, id: string) {
-    const opname = await opnamesRepo.getById(ctx.organizationId, id);
-    if (!opname) throw new HttpError(404, 'NOT_FOUND', 'Data opname tidak ditemukan');
-
-    if (opname.status !== 'pending_review') {
-      throw new HttpError(409, 'CONFLICT', `Opname ini sudah berstatus ${opname.status}`);
-    }
-
     return await db.transaction(async (tx) => {
+      const [opname] = await tx
+        .select()
+        .from(stockOpnames)
+        .where(and(eq(stockOpnames.id, id), eq(stockOpnames.organizationId, ctx.organizationId)))
+        .for('update');
+
+      if (!opname) throw new HttpError(404, 'NOT_FOUND', 'Data opname tidak ditemukan');
+
+      if (opname.status !== 'pending_review') {
+        throw new HttpError(409, 'CONFLICT', `Opname ini sudah berstatus ${opname.status}`);
+      }
+
       const variance = Number(opname.varianceQty);
 
       if (variance !== 0) {
@@ -118,7 +151,7 @@ export const opnamesService = {
           approvedByUserId: ctx.userId,
           decidedAt: new Date(),
         })
-        .where(eq(stockOpnames.id, opname.id))
+        .where(and(eq(stockOpnames.id, opname.id), eq(stockOpnames.status, 'pending_review')))
         .returning();
 
       return updated;
@@ -126,23 +159,24 @@ export const opnamesService = {
   },
 
   async rejectOpname(ctx: RequestContext, id: string) {
-    const opname = await opnamesRepo.getById(ctx.organizationId, id);
-    if (!opname) throw new HttpError(404, 'NOT_FOUND', 'Data opname tidak ditemukan');
+    return await db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(stockOpnames)
+        .set({
+          status: 'rejected',
+          approvedByUserId: ctx.userId,
+          decidedAt: new Date(),
+        })
+        .where(and(eq(stockOpnames.id, id), eq(stockOpnames.organizationId, ctx.organizationId), eq(stockOpnames.status, 'pending_review')))
+        .returning();
 
-    if (opname.status !== 'pending_review') {
-      throw new HttpError(409, 'CONFLICT', `Opname ini sudah berstatus ${opname.status}`);
-    }
+      if (!updated) {
+        const existing = await opnamesRepo.getById(ctx.organizationId, id);
+        if (!existing) throw new HttpError(404, 'NOT_FOUND', 'Data opname tidak ditemukan');
+        throw new HttpError(409, 'CONFLICT', `Opname ini sudah berstatus ${existing.status}`);
+      }
 
-    const [updated] = await db
-      .update(stockOpnames)
-      .set({
-        status: 'rejected',
-        approvedByUserId: ctx.userId,
-        decidedAt: new Date(),
-      })
-      .where(eq(stockOpnames.id, opname.id))
-      .returning();
-
-    return updated;
+      return updated;
+    });
   },
 };
