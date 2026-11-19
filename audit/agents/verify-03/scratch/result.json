@@ -1,0 +1,112 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "auth/reset-password/outstanding-capability-not-revoked",
+    "title": "Earlier reset capability may survive completed account recovery",
+    "description": "Source supports a conditional stale-recovery-capability hypothesis: a non-owner who already possesses an unused reset token A could submit it before its original expiry after the owner has completed recovery using distinct token B, changing the same account password again. Public issuance alone does not reveal A: forgotPassword returns a generic response and only logs the generated token in this implementation. Token theft, guessing, log access, deployed email delivery and arbitrary-account takeover are not established. The meaningful proposed boundary is withdrawal of previously issued recovery authority after successful owner recovery, not single use of A itself. PRD requires each token to be one-hour/single-use and revokes refresh sessions, but does not explicitly require sibling-reset revocation; that policy and a concrete accepted stale transition remain unverified.",
+    "claimed_root_cause": "forgotPassword inserts distinct reset rows without superseding siblings. resetPassword accepts a hash-matched row based only on consumedAt and expiresAt, then updates its userId password, consumes only that row ID and revokes refresh sessions. Neither resetPassword nor authenticated changePassword invalidates other reset rows or binds acceptance to a password version. Schema and reviewed migration definitions permit multiple hashes for one user.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 108,
+        "scope": "POST /auth/reset-password",
+        "description": "Unauthenticated caller submits token and newPassword through resetPasswordSchema; no current password or authenticated session is required."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 369,
+        "scope": "authService.resetPassword token acceptance",
+        "description": "Hashes submitted token, looks up its row and rejects only missing, consumed or expired rows; does not compare a user credential version or latest recovery event."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 187,
+        "scope": "authRepo.findPasswordResetTokenByHash",
+        "description": "Selects by tokenHash alone; returns the row containing the bound userId."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 375,
+        "scope": "password mutation and cleanup",
+        "description": "Updates record.userId password, consumes record.id only, then revokes all user refresh tokens; sibling reset rows are untouched by this source path."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 188,
+        "description": "Requires one-hour, single-use reset tokens; line 189 requires revocation of all refresh tokens. Does not expressly specify sibling-reset invalidation."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1128,
+        "description": "Specifies random 32-byte hashed tokens, one-hour lifetime and refresh revocation after reset, but no explicit sibling-reset revocation policy."
+      },
+      {
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 97,
+        "description": "Public forgot-password accepts a validated email and returns generic 202; issuance does not return a raw token to its requester."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 360,
+        "description": "Inserts an additional one-hour reset row; raw token is logged at line 365 rather than returned. No sibling invalidation is performed."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 192,
+        "description": "consumePasswordResetToken updates consumedAt only where passwordResetTokens.id equals the supplied ID; password update at line 197 changes only users.passwordHash."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 380,
+        "description": "Authenticated password change verifies oldPassword and revokes refresh sessions but performs no reset-row invalidation."
+      },
+      {
+        "file": "src/modules/auth/auth.schemas.ts",
+        "line": 59,
+        "description": "Reset body requires a nonempty token and newPassword of 8 to 128 characters; validation supplies no freshness binding."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 186,
+        "description": "Reset rows bind to a user foreign key, have expiry and consumedAt, and unique tokenHash, but no unique-user constraint or password-version binding."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 211,
+        "description": "SQL reset table defines independent expiry/consumption rows; hash uniqueness at line 996 does not restrict multiple tokens per user."
+      },
+      {
+        "file": "src/lib/otp.ts",
+        "line": 15,
+        "description": "Opaque tokens use crypto.randomBytes(32) and SHA-256 hashing; no token-guessing weakness is demonstrated."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Protected endpoints reload unrevoked refresh-session state, so recovery revokes session authority. This middleware does not gate the public reset endpoint."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 67,
+        "description": "Auth router mounts under both /api/v1 and /api (lines 91 and 94), without an application-level recovery-version gate."
+      }
+    ],
+    "blockers": [
+      "No target execution is authorized. Combined scratch-only write enforcement and aggregate process-tree CPU, memory, PID and disk limits are not established; builds, tests, imports and harnesses were not run. Artifact promotion allowlist is empty with zero byte limits.",
+      "No bounded dummy-account observation demonstrates that A changes the password after B completes recovery, or after authenticated password change.",
+      "Owner recovery policy must establish that successful password reset/change withdraws other issued reset capabilities. The cited per-token single-use requirement alone does not establish that expectation, and possession of a valid unused A otherwise remains bearer authority.",
+      "A non-owner must already possess A and submit it within its original one-hour expiry after the owner transition. No source-grounded token acquisition by an ordinary public requester is established; any temporary mailbox or log compromise prerequisite must be stated rather than assumed."
+    ],
+    "validation_plan": {
+      "local": "Only after approval of the complete OS-enforced sandbox and parent artifact-promotion bounds, use isolated PostgreSQL and one dummy account. Through the actual forgot-password flow issue distinct A and B; capture only dummy tokens inside scratch without exposing values in retained evidence. Complete POST /api/v1/auth/reset-password with B and a schema-valid dummy password. Before A expires, submit A with another valid dummy password and check only whether it is rejected or the dummy password hash verifies the second value. Stop at that minimum result. In a separate fixture, issue A, perform authenticated change-password using the correct dummy old password, then check A likewise. Include used-token and expired-token rejection controls; do not substitute mocked repository success for database behavior. If invalidation is required, atomically update the password and invalidate all outstanding user recovery capabilities, or bind tokens to a credential version advanced on both reset and change-password, with regression tests for both sequences.",
+      "deployment": "Without probing deployed services or reading credentials/logs, ask the owner to document whether completing recovery must revoke all prior reset links, and whether multiple independent unused links intentionally remain valid until expiry. Confirm the authorized dummy-fixture delivery/acquisition model and any additional DB-side invalidation not represented in source. An intentional documented independent-link policy refutes the claimed stale-authority boundary; an expected revocation boundary plus observed acceptance supports it. No comparable baseline was established."
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "units": [
+    {
+      "coverage_id": "src%2Fmodules%2Fdashboard::plan-restricted%20derived%20features%20and%20supplier%20master::src%2Fmodules%2Fdashboard::ATTACK-CLASSES.md%23Business%20logic",
+      "disposition": "candidate",
+      "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requirePlan.ts", "src/modules/dashboard/dashboard.routes.ts", "src/modules/dashboard/dashboard.service.ts", "src/modules/dashboard/dashboard.repo.ts", "src/modules/reports/reports.routes.ts", "src/modules/reports/reports.service.ts", "src/modules/ai/ai.routes.ts", "src/modules/ai/ai.service.ts", "src/modules/ai/ai.repo.ts", "src/modules/billing/billing.routes.ts", "src/modules/billing/billing.service.ts", "src/modules/suppliers/suppliers.routes.ts", "src/modules/suppliers/suppliers.service.ts", "src/modules/suppliers/suppliers.repo.ts", "src/modules/suppliers/suppliers.schemas.ts", "src/modules/wastes/wastes.routes.ts", "src/db/schema/ops.ts", "src/modules/expenses/expenses.service.ts"],
+      "checks": [
+        {
+          "agent_id": "hunt-featureplans",
+          "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/requirePlan.ts", "src/modules/dashboard/dashboard.routes.ts", "src/modules/dashboard/dashboard.service.ts", "src/modules/dashboard/dashboard.repo.ts", "src/modules/reports/reports.routes.ts", "src/modules/reports/reports.service.ts", "src/modules/ai/ai.routes.ts", "src/modules/ai/ai.service.ts", "src/modules/ai/ai.repo.ts", "src/modules/billing/billing.routes.ts", "src/modules/billing/billing.service.ts", "src/modules/wastes/wastes.routes.ts", "src/db/schema/ops.ts", "src/modules/expenses/expenses.service.ts"],
+          "invariant": "A Starter organization owner may use basic COGS, sales reports, inventory and AI, but must not receive explicitly Growth-gated SKU margin reporting, expense-inclusive nett profit or waste percentage through alternate derived-data delivery paths.",
+          "method": "source",
+          "result": "PRD.md:628-640 and 681 distinguish basic COGS from gated analytics. Authentication loads the live plan at authenticate.ts:50-81 but does not enforce entitlements. Billing advertises nettProfitIncludesOpex=false for Starter at billing.service.ts:16-32. Dashboard receives no plan argument and unconditionally returns expense-inclusive profit, wastePct and menuPerformance.marginPct; its chart also subtracts opex. AI /context directly returns expense-inclusive nett KPIs, and /advisor uses the same unfiltered context, including returning forwardPayload when RAG is unset. AI chat itself emits basic stock, revenue and generic bundling advice, not a demonstrated numeric premium margin report. Reports correctly set rop=null and reorderQty=0 for Starter/free_trial using the live plan. Reports still expose basic stock quantities, supplierName string, costs and dailyUsage: these are not claimed as a demonstrated ROP bypass merely because a client could calculate ROP. Waste routes separately require Growth. No cross-role or cross-tenant claim is made. Nonzero daily_metrics opex/waste lineage is not established by the reviewed expense service; numeric-effect validation needs fixtures and, for practical nonzero opex/waste, an owner-observed aggregation source or downgrade history.",
+          "artifact": null
+        },
+        {
+          "agent_id": "hunt-featureplans",
+          "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requirePlan.ts", "src/modules/suppliers/suppliers.routes.ts", "src/modules/suppliers/suppliers.service.ts", "src/modules/suppliers/suppliers.repo.ts", "src/modules/suppliers/suppliers.schemas.ts"],
+          "invariant": "An authenticated Starter owner retains owner role authority but receives only a basic supplier string, not Growth supplier-master CRUD.",
+          "method": "source",
+          "result": "PRD.md:634 restricts supplier master to Growth+. The globally mounted supplier router authenticates and allows owner/admin mutations, but never invokes requirePlan. Its services accept only organizationId and pass to tenant-scoped persistent supplier CRUD. authorize correctly admits the owner; it is not the missing control. Unlike the supported basic ingredient supplierName string, the supplier master persists separate records with contact email, phone and notes. No outer mount, service or repository plan check prevents the Starter-owner path.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": ["dashboard/derived-analytics/missing-plan-projection", "suppliers/master/missing-growth-entitlement"],
+      "unresolved": ["No approved OS-enforced sandbox or promoted local-evidence artifact is available; no target code was executed. Nonzero daily_metrics opex/waste production is not established in the reviewed paths."]
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "dashboard/derived-analytics/missing-plan-projection",
+      "title": "Starter owners receive Growth-only derived analytics through dashboard and AI context",
+      "description": "An authenticated owner of an active Starter organization is authorized for their own business data but not every paid feature. GET /api/v1/dashboard returns SKU margin reporting, expense-inclusive nett KPIs and waste percentage without evaluating the subscription. Its monthly chart also includes opex. GET /api/v1/ai/context is an alternate direct delivery of expense-inclusive nett profit; POST /api/v1/ai/advisor builds the same context and, with RAG unset, returns it as forwardPayload. The /api aliases share these routes. This is paid-feature parity failure, not a staff-role bypass or access to another tenant. Expense-inclusive and waste numerical differentiation requires nonzero metrics; supplier-master access is a separate candidate.",
+      "claimed_root_cause": "Derived analytics are assembled with organization/outlet identifiers but without a plan-aware feature projection. Billing's Growth entitlement is informational only, while dashboard and AI context compute and return premium outputs unconditionally.",
+      "trace": [
+        {"kind": "entrypoint", "file": "src/modules/dashboard/dashboard.routes.ts", "line": 9, "scope": "GET /dashboard", "description": "Authenticated Starter owner can request the dashboard; no Growth gate is installed."},
+        {"kind": "propagation", "file": "src/middleware/authenticate.ts", "line": 71, "scope": "request context", "description": "Live planCode is available in request context, but authentication itself admits Starter."},
+        {"kind": "propagation", "file": "src/modules/dashboard/dashboard.routes.ts", "line": 14, "scope": "dashboard service invocation", "description": "Only organizationId, outletId and query are passed, discarding the available plan context."},
+        {"kind": "propagation", "file": "src/modules/dashboard/dashboard.repo.ts", "line": 103, "scope": "getMenuPerformance", "description": "Paid-sale lines yield per-menu price, COGS and gross-profit aggregates, without a plan predicate."},
+        {"kind": "sink", "file": "src/modules/dashboard/dashboard.service.ts", "line": 80, "scope": "dashboard response", "description": "Returns nettProfitIdr, nettMarginPct, wastePct, monthly expense-inclusive profit and menuPerformance with marginPct for every plan."}
+      ],
+      "evidence": [
+        {"file": "PRD.md", "line": 634, "description": "Supplier master and SKU margin report are Growth features; Starter gets basic supplier string."},
+        {"file": "PRD.md", "line": 635, "description": "Starter nett KPI is revenue minus COGS; operating-expense-inclusive profit starts at Growth."},
+        {"file": "PRD.md", "line": 640, "description": "Starter basic COGS explicitly excludes waste percentage and ROP."},
+        {"file": "src/modules/billing/billing.service.ts", "line": 32, "description": "nettProfitIncludesOpex is false below Growth, establishing a source-visible sibling entitlement."},
+        {"file": "src/modules/dashboard/dashboard.service.ts", "line": 31, "description": "Unconditionally subtracts opex and calculates waste percentage; lines 66-75 calculate per-menu margin and lines 87-100 expose the results."},
+        {"file": "src/modules/dashboard/dashboard.repo.ts", "line": 55, "description": "Monthly chart profit subtracts opex without knowing the plan, an additional copy requiring the same entitlement projection."},
+        {"file": "src/modules/ai/ai.routes.ts", "line": 51, "description": "Direct /context response requires authentication but passes no plan to getAggregatedContext and returns the result."},
+        {"file": "src/modules/ai/ai.repo.ts", "line": 95, "description": "Computes grossProfit minus opex and returns nettProfitIdr and nettMarginPct at lines 105-106 independent of plan."},
+        {"file": "src/modules/ai/ai.service.ts", "line": 19, "description": "Legacy advisor builds the unfiltered business context and returns it as forwardPayload at lines 39-43 if RAG is unset; no downstream RAG assumption is needed for /context."},
+        {"file": "src/modules/reports/reports.service.ts", "line": 139, "description": "Strongest relevant sibling control: planAllowsRop(ctx.planCode) suppresses Starter ROP, with no calculated reorder quantity when ROP is null."},
+        {"file": "src/modules/wastes/wastes.routes.ts", "line": 12, "description": "Primary waste workflow independently enforces requirePlan('growth'); dashboard does not inherit that gate."},
+        {"file": "src/db/schema/ops.ts", "line": 65, "description": "Opex and waste daily-metric fields default to zero. Reviewed expense creation does not populate them, so nonzero numeric impact is a validation dependency rather than an assumed fact."}
+      ],
+      "blockers": ["No approved sandbox with network isolation, allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk/time limits is available; target execution is prohibited.", "No local HTTP/service result demonstrates Starter versus Growth output. Nonzero daily_metrics opex/waste producer or downgraded populated history is not established; a zero-only deployment would mask these two numerical effects, though the margin-report path uses paid sale lines directly."],
+      "validation_plan": {
+        "local": "Under a parent-approved bounded sandbox, use dummy Starter and Growth owner sessions and fixture paid sale lines with distinct price/COGS. Seed explicit dummy daily metrics with nonzero revenue, COGS, opex and waste to isolate projection behavior. Compare dashboard KPIs, chart, menuPerformance, /ai/context and unset-RAG /ai/advisor. Starter must retain revenue/COGS and gross-profit basics but not expense-inclusive nett, waste percentage or SKU margin-report outputs; Growth retains them. Assert /reports/stock has rop=null and reorderQty=0 for Starter, not a blanket denial of basic stock reporting. Mock or disable all external RAG calls.",
+        "deployment": "Owner review only: identify the actual daily_metrics aggregation producer and whether nonzero opex/waste can exist for a Starter tenant, including downgrade behavior. Do not infer such a producer or billing transition from the response schema alone. No deployed probing is requested."
+      }
+    },
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "suppliers/master/missing-growth-entitlement",
+      "title": "Starter owner can use Growth supplier-master CRUD",
+      "description": "An active Starter organization owner can invoke supplier-master creation, retrieval, update and soft deletion despite PRD restricting Starter to a basic supplier string. The owner is deliberately selected so the role check succeeds legitimately; the missing boundary is paid entitlement, not role or tenant authorization. Separate supplier records and contact fields are a concrete capability beyond storing supplierName on an ingredient.",
+      "claimed_root_cause": "Supplier routes enforce authentication and mutation roles but omit the independent Growth plan gate; services and repositories take only organizationId and cannot enforce the missing entitlement.",
+      "trace": [
+        {"kind": "entrypoint", "file": "src/modules/suppliers/suppliers.routes.ts", "line": 29, "scope": "POST /suppliers", "description": "Authenticated Starter owner passes authorize('owner', 'admin') and submits a named dummy supplier."},
+        {"kind": "propagation", "file": "src/modules/suppliers/suppliers.routes.ts", "line": 31, "scope": "supplier creation dispatch", "description": "Validated supplier body and organizationId reach createSupplier without checking planCode."},
+        {"kind": "propagation", "file": "src/modules/suppliers/suppliers.service.ts", "line": 15, "scope": "createSupplier", "description": "Service delegates directly to repository and receives no subscription context."},
+        {"kind": "sink", "file": "src/modules/suppliers/suppliers.repo.ts", "line": 31, "scope": "persistent supplier master insert", "description": "Inserts tenant-bound supplier master with name and optional contact/notes fields, returns the record, and the route sends HTTP 201."}
+      ],
+      "evidence": [
+        {"file": "PRD.md", "line": 634, "description": "Starter supplier support is basic string; Growth and above receive supplier master."},
+        {"file": "src/app.ts", "line": 74, "description": "Supplier router is mounted without an outer entitlement middleware, under both /api/v1 and /api."},
+        {"file": "src/middleware/authenticate.ts", "line": 80, "description": "Live Starter plan is loaded into context; authentication does not reject it."},
+        {"file": "src/middleware/authorize.ts", "line": 10, "description": "Role authorization checks only allowedRoles; owner access here is legitimate but does not imply Growth entitlement."},
+        {"file": "src/middleware/requirePlan.ts", "line": 22, "description": "Existing independent plan guard can reject below-Growth principals, but supplier routes do not invoke it."},
+        {"file": "src/modules/suppliers/suppliers.routes.ts", "line": 8, "description": "Router uses only authenticate globally; GET routes are available and POST/PATCH/DELETE add roles but not a plan gate."},
+        {"file": "src/modules/suppliers/suppliers.repo.ts", "line": 33, "description": "Creates separate master records with organizationId, name, phone, email and notes. Tenant filters on sibling CRUD prevent cross-tenant access but do not prevent Starter use."}
+      ],
+      "blockers": ["No approved bounded sandbox is available, so persistent creation and subsequent readback with a dummy Starter owner have not been executed."],
+      "validation_plan": {
+        "local": "In a parent-approved isolated fixture with low resource limits, create dummy active Starter and Growth owner contexts. POST a supplier with name 'Fixture Supplier' and non-sensitive phone/email/notes, then read back that exact dummy ID. Current source predicts successful Starter creation; intended behavior is PLAN_REQUIRED without persistence for Starter and permitted tenant-scoped CRUD for Growth. Verify PATCH/DELETE and list/detail use the same entitlement policy while ordinary ingredient supplierName strings remain supported. No real credentials, production data or external calls."
+      }
+    }
+  ],
+  "hardening": [
+    "Do not gate the entire dashboard or basic sales/stock reports: PRD.md:628-632 explicitly includes revenue dashboard, basic COGS, inventory, sales reports and expenses for Starter. Restrict only explicitly premium outputs and operations.",
+    "ROP suppression is present in reports.service.ts:10-12,63,139-144,169-171. Basic dailyUsage, minStock, leadTimeDays and supplierName do not by themselves demonstrate unauthorized server-side ROP computation.",
+    "AI chat's basic stock/revenue responses and generic bundling text do not prove delivery of a numeric premium margin report. AI daily accounting and AI staff-role authorization are peer-owned and are not duplicated here.",
+    "ai.repo.ts:107 assigns totalTransactions to wasteLossIdr, not actual waste. This is a source-visible accuracy defect, not evidence of a waste-percentage entitlement bypass through AI.",
+    "Billing features are descriptive responses, not enforcement; within this unit no subscription-changing billing endpoint is present. No payment-integrity bypass is inferred."
+  ],
+  "uncovered": []
+}

@@ -1,0 +1,2447 @@
+[
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "auth/refresh/check-then-revoke-session",
+    "title": "Concurrent refresh can fork a single-use session and escape revocation",
+    "description": "An actor holding a copied valid refresh token can race its legitimate holder. Both requests can read the old unrevoked row before either revokes it, then each create an independent successor session. Revoking the old session or one visible successor does not revoke the other successor. A related schedule can let a refresh that already read its source row create a new session after revoke-all finishes during password recovery. Sequential replay is rejected; the candidate is specifically the concurrent transition across the stated rotation/revocation boundary.",
+    "claimed_root_cause": "Refresh authorization and consumption are separate statements. revokeRefreshToken updates by ID alone and returns no successful-consumption indication; successor creation is not coupled to an exclusive live-session transition or serialized against account-wide revocation.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 58,
+        "scope": "POST /auth/refresh",
+        "description": "Accepts the opaque refresh capability without an access token and passes it to authService.refresh."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 264,
+        "scope": "authService.refresh",
+        "description": "Reads the session and checks revokedAt and expiry before awaiting a separate revocation."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 173,
+        "scope": "authRepo.revokeRefreshToken",
+        "description": "Unconditionally sets revokedAt by ID, so a second consumer is not rejected."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 276,
+        "scope": "successor-session creation",
+        "description": "Each previously admitted request inserts a new unrevoked session and returns new refresh/access capabilities."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1292,
+        "description": "Refresh explicitly rotates by revoking the old capability and issuing a new one."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 168,
+        "description": "Refresh lookup is a plain select; the subsequent update and insert do not share a transaction."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "The strongest downstream control checks the successor session's own revokedAt; it does not consult its predecessor or a revocation epoch."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 177,
+        "description": "Account-wide revocation updates rows presently matching userId but does not prevent a previously admitted refresh from inserting a successor later."
+      }
+    ],
+    "blockers": [
+      "No approved complete OS sandbox is available; concurrent target requests and database fixtures were prohibited.",
+      "Actual PostgreSQL interleavings and successor acceptance have not been observed with bounded dummy sessions."
+    ],
+    "validation_plan": {
+      "local": "In a parent-approved network-disabled sandbox with an isolated PostgreSQL fixture and dummy active member, pause two refresh calls after reading the same live token, release them, and check whether both successors authenticate. Separately pause one admitted refresh before successor insertion, complete dummy-user reset/revoke-all, then release insertion and check that no new session remains usable. Limit each schedule to two requests. A fix must atomically consume the source session and serialize successor creation against user-wide revocation; regressions should require one successful consumer and no post-revocation successor."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "auth/reset-password/outstanding-capability-not-revoked",
+    "title": "Earlier password-reset capabilities survive successful recovery",
+    "description": "A holder of an earlier, still-unexpired reset capability can potentially reset the account again after its owner successfully recovers using a different issued capability. forgotPassword inserts additional rows, while resetPassword consumes only the supplied row and revokes refresh sessions, not outstanding recovery capabilities. This is a stale recovery-capability boundary, not an assertion that tokens can be guessed or that missing rate limits alone are exploitable.",
+    "claimed_root_cause": "The recovery lifecycle has no per-user invalidation of other reset rows on token issuance, successful reset or authenticated password change. The password-reset acceptance predicate checks only the submitted row's expiry and consumedAt.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 97,
+        "scope": "POST /auth/forgot-password",
+        "description": "Public issuance can create multiple password-reset capabilities for one account."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 360,
+        "scope": "authService.forgotPassword",
+        "description": "Inserts a new one-hour token without invalidating older reset rows."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 370,
+        "scope": "authService.resetPassword",
+        "description": "Accepts any matching unconsumed, unexpired reset row, independently of later password changes or other successful resets."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 375,
+        "scope": "password mutation and token cleanup",
+        "description": "Changes the account password, consumes only record.id, and revokes refresh tokens while leaving sibling reset capabilities valid."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 188,
+        "description": "Recovery capabilities are one-hour, single-use credentials intended to authorize account recovery."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 192,
+        "description": "consumePasswordResetToken updates only the submitted ID."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 380,
+        "description": "Authenticated password change also revokes refresh sessions without invalidating password-reset rows."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 186,
+        "description": "Reset rows contain no password-version binding; multiple distinct hashes may belong to the same user."
+      }
+    ],
+    "blockers": [
+      "The complete sandbox required to exercise target code and isolated dummy-account storage is not approved.",
+      "A bounded demonstration of an older capability changing the password after completed owner recovery has not been performed."
+    ],
+    "validation_plan": {
+      "local": "Within an approved isolated sandbox, issue two dummy reset capabilities A and B, complete recovery with B, then submit A before its original expiry. Observe only rejection or the dummy password-verification result. Repeat with authenticated password change between issuance and A's submission. Invalidate outstanding user reset capabilities atomically with a successful password change/reset, or bind them to a password version; regression tests should reject A after either transition."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "auth/reset-password/check-then-consume",
+    "title": "Concurrent requests can reuse one password-reset capability",
+    "description": "An actor retaining the same reset token as its legitimate recipient can race the owner's submission. Both requests can pass the unconsumed check before either marks the token consumed, then write different passwords. A late attacker write can replace the owner's newly recovered password even though the capability was intended to be single-use.",
+    "claimed_root_cause": "Single-use verification, password update, token consumption and session revocation are separate awaited operations. Token consumption updates by ID without requiring consumedAt to remain null or checking that one caller exclusively claimed the capability.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 108,
+        "scope": "POST /auth/reset-password",
+        "description": "Accepts a bearer recovery token and a replacement password."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 370,
+        "scope": "reset validation",
+        "description": "Reads and checks consumedAt and expiry before asynchronous password hashing and mutation."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 192,
+        "scope": "reset consumption",
+        "description": "The consumedAt write is unconditional by ID and does not arbitrate concurrent claimants."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 196,
+        "scope": "authRepo.updateUserPassword",
+        "description": "Each admitted request can independently update the user's password; the final writer determines the credential."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 188,
+        "description": "Password-reset credentials are explicitly required to be single-use."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 374,
+        "description": "Password hashing and update occur after the read/check and before the separate consumption statement."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 187,
+        "description": "Reset lookup is an unlocked select by token hash."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 211,
+        "description": "The reset table and hash uniqueness do not enforce exclusive consumption or conditional password mutation."
+      }
+    ],
+    "blockers": [
+      "No complete parent-approved sandbox permits executing target-controlled code.",
+      "Two-request scheduling against isolated PostgreSQL and the final dummy-account credential have not been observed."
+    ],
+    "validation_plan": {
+      "local": "In an approved sandbox, issue one dummy reset token and pause two reset calls after their token checks, each with a different dummy password. Release the owner's update first and the competing update second; inspect response outcomes and verify only the final dummy password. A regression should allow exactly one claimant and one password mutation. Use a transaction that conditionally claims the still-live token and atomically changes the password and revokes sessions, with expiry rechecked at the trusted transition."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "auth/credential-delivery/unconditional-secret-logging",
+    "title": "Recovery and verification capabilities are logged outside a development-only guard",
+    "description": "Registration OTPs, resent OTPs and full password-reset tokens are interpolated into info-level log messages without checking production mode or SMTP configuration. A log reader who is not authorized to recover an account could obtain a usable reset capability for that account during its one-hour lifetime. The reset-token path is reachable for existing accounts independently of the broken registration OTP verification lookup. Actual log-reader access is not established by source.",
+    "claimed_root_cause": "Development credential-delivery logging is unconditional. The logger changes formatting by environment but does not suppress these messages or remove credentials embedded in message strings, and SMTP_URL is not used by the delivery paths.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 97,
+        "scope": "POST /auth/forgot-password",
+        "description": "An anonymous caller can initiate reset-token issuance for an existing account."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 358,
+        "scope": "reset capability creation",
+        "description": "Generates the opaque capability and stores its hash with user binding and a one-hour expiry."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 365,
+        "scope": "credential-bearing logging",
+        "description": "Passes the full raw reset capability and recipient email to logger.info in every environment."
+      },
+      {
+        "kind": "sink",
+        "file": "src/lib/logger.ts",
+        "line": 4,
+        "scope": "pino logger",
+        "description": "Configured log level controls emission, but no production credential guard or message redaction is defined."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1124,
+        "description": "The stated OTP stdout fallback is development without SMTP, not an unconditional production behavior."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 62,
+        "description": "Initial registration also logs the raw OTP without an environment or delivery-mode guard."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 350,
+        "description": "OTP resend has the same unconditional credential logging."
+      },
+      {
+        "file": "src/config/env.ts",
+        "line": 15,
+        "description": "Default logger level includes info messages."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 369,
+        "description": "The raw reset value is sufficient input to the reset acceptance path; it is hashed and looked up without another user factor."
+      }
+    ],
+    "blockers": [
+      "Deployed log level, log transport, retention and log-reader authorization are outside the observed source.",
+      "No approved sandbox permits a production-mode dummy-secret logging and reset-acceptance check."
+    ],
+    "validation_plan": {
+      "local": "With an approved sandbox and dummy signing material/account only, set NODE_ENV=production and LOG_LEVEL=info, capture one reset issuance and inspect whether the dummy raw token appears in captured output, then use it for one dummy password reset. Also inspect registration and resend messages without claiming their currently broken verification flow works. Remove raw credential logging outside an explicit isolated development delivery mode and regress that production captures never contain dummy capability values.",
+      "deployment": "The owner should inspect configured log level and access policy without sharing live credentials, determining whether any reader or downstream log processor has credential-bearing log access but lacks authority to recover the corresponding accounts."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/middleware/authenticate.ts:organization-outlets-as-principal-allowlist",
+    "title": "Authentication grants non-owners every organization outlet instead of assigned outlets",
+    "description": "A non-owner member assigned to one outlet can select another outlet in the same organization using X-Outlet-Id. Authentication puts every non-deleted organization outlet in the purported permitted-outlet list, so downstream outlet-scoped services receive an authorized-looking context for the wrong outlet. The independently traced minimum effect is reading another outlet's cash-shift records. This is an intra-organization assignment-boundary failure, not a direct arbitrary-organization selector bypass.",
+    "claimed_root_cause": "authenticate derives outletIds exclusively from outlets.organizationId and does not narrow it using the principal's staff assignment or another access relation. It accepts the requested header whenever that organization-wide list contains it. requireOutlet only tests non-null activeOutletId.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/middleware/authenticate.ts",
+        "line": 61,
+        "scope": "authenticate",
+        "description": "A valid non-owner member supplies another same-organization outlet UUID in X-Outlet-Id."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authenticate.ts",
+        "line": 55,
+        "scope": "authenticate outlet context",
+        "description": "The candidate outlet set contains all non-deleted organization outlets, without a principal assignment predicate; the header is accepted and exported in req.ctx."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 24,
+        "scope": "GET /shifts",
+        "description": "The authenticated route forwards organizationId and the selected activeOutletId without a separate assignment check."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 34,
+        "scope": "listShifts",
+        "description": "The query returns the selected outlet's cash amounts, shift state and cashier identity, filtering the wrong outlet supplied by the overbroad context."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 126,
+        "description": "Owners see all organization outlets; managers are bound to assigned outlets and cashiers to one active outlet."
+      },
+      {
+        "file": "PRD.md",
+        "line": 217,
+        "description": "Outlet switching must list outlets the user is allowed to access."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 243,
+        "description": "outletIds is explicitly the permitted set; line 258 requires activeOutletId membership and identifies owner-wide access as the exception."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 58,
+        "description": "The only outlet query predicates are organization equality and deletedAt null."
+      },
+      {
+        "file": "src/middleware/requireOutlet.ts",
+        "line": 5,
+        "description": "The operational middleware does not independently enforce assignment."
+      },
+      {
+        "file": "tests/tenant-isolation.test.ts",
+        "line": 101,
+        "description": "The outlet test fabricates activeOutletId null and does not test real header-to-context derivation."
+      }
+    ],
+    "blockers": [
+      "No complete approved execution sandbox exists, and the source-only promotion allowlist is empty; no dummy-principal request was executed.",
+      "Validation must explicitly provision a non-owner membership and assignment fixture because the public onboarding path creates an owner."
+    ],
+    "validation_plan": {
+      "local": "In a parent-approved network-disabled, read-only-source, scratch-only, resource-limited sandbox, create dummy organization A with outlets A1/A2 and a cashier member linked only to A1. Exercise actual authentication with that cashier's local session and X-Outlet-Id A2, then GET /shifts containing one harmless A2 fixture. Observe whether A2 context/data is returned. Repeat as owner as a positive control and with an outlet from organization B as a negative control."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/staff/staff.routes.ts:staffrole-read-policy-omitted",
+    "title": "Staff directory routes expose workforce records to roles denied staff access",
+    "description": "A logged-in organization staff member with cashier, barista, cook or helper role can call the staff list and detail routes, which return workforce identity/contact and employment information. The permission matrix denies those personas Staff CRUD access. Existing salary stripping limits the result and prevents claiming salary disclosure for orgRole staff, but it does not authorize directory access.",
+    "claimed_root_cause": "Both staff GET handlers require authentication only. Neither authorize nor a service-level policy evaluates staffRole or the relevant permission-matrix deny cells. The list's outlet filter and the detail's organization filter establish location/tenant selection, not role authority.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/staff/staff.routes.ts",
+        "line": 47,
+        "scope": "GET /staff/:id",
+        "description": "A denied workforce persona requests another same-organization staff record by ID."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.service.ts",
+        "line": 15,
+        "scope": "getStaffById",
+        "description": "The service performs existence lookup using organization and ID without role authorization."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 79,
+        "scope": "getById",
+        "description": "The repository selects the complete same-organization staff row, without caller permission or outlet predicates."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/staff/staff.routes.ts",
+        "line": 51,
+        "scope": "staff detail response",
+        "description": "Only baseSalaryIdr and allowanceIdr are removed for orgRole staff; remaining name, phone, email and employment fields are returned."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 601,
+        "description": "The Staff CRUD matrix grants owner access, limited manager update authority and deny cells for cashier, barista, kitchen and helper."
+      },
+      {
+        "file": "src/modules/staff/staff.routes.ts",
+        "line": 11,
+        "description": "The sibling list handler is likewise authentication-only and returns staff records after salary stripping."
+      },
+      {
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 23,
+        "description": "List projection includes staff name, role, phone, email and employment type."
+      },
+      {
+        "file": "src/middleware/authorize.ts",
+        "line": 4,
+        "description": "The authorization helper evaluates only orgRole; it cannot implement the staff-persona matrix by itself."
+      }
+    ],
+    "blockers": [
+      "Target execution is prohibited without the complete parent-approved sandbox, so no denied-role HTTP read has been observed locally.",
+      "A non-owner user with an explicit staffRole must be supplied in the dummy fixture; invite/provisioning behavior is not assumed."
+    ],
+    "validation_plan": {
+      "local": "Using the approved isolated fixture environment, provision an orgRole staff user linked to a cashier or helper record and another harmless employee record in the same organization/outlet. Exercise GET /staff and GET /staff/:id through the real router. Check for unauthorized workforce fields while separately asserting salary and allowance remain absent. Add owner and store-manager policy controls."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/shifts/shifts.service.ts:close-without-cashier-ownership",
+    "title": "A cashier can close another cashier's cash shift",
+    "description": "The requirements limit cashier shift authority to the cashier's own shift. Both close routes accept all orgRole staff users and close the selected open shift without comparing the caller with its staffId or openedByUserId. The ID alias additionally permits a same-organization shift outside the currently selected outlet. The minimum boundary effect is changing another cashier's shift to balanced or variance and recording caller-supplied physical cash.",
+    "claimed_root_cause": "closeShift validates only a non-null active outlet and an open returned shift. It does not enforce staffRole, cashier ownership or, on the ID branch, equality between the shift outlet and activeOutletId. The final repository update uses only the previously retrieved shift ID.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 63,
+        "scope": "POST /shifts/:id/close",
+        "description": "A cashier member submits another cashier's open shift ID and a valid physical-cash amount; the role gate admits orgRole staff."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 58,
+        "scope": "closeShift",
+        "description": "The ID branch retrieves by organization and ID, checks open status, and makes no ownership or matching-outlet decision."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 63,
+        "scope": "getById",
+        "description": "Organization filtering prevents an arbitrary foreign-organization shift lookup but does not enforce cashier ownership."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 97,
+        "scope": "close",
+        "description": "The update writes physical cash, difference, status, notes and closedAt for the selected shift ID."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 602,
+        "description": "Cashiers receive shift open/close authority only for their own shift; barista, kitchen and helper are denied."
+      },
+      {
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 52,
+        "description": "The non-ID close route uses the same service and broad orgRole gate, so selecting the active shift does not repair missing ownership."
+      },
+      {
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 74,
+        "description": "The service forwards the selected shift directly to the write after computing variance, without consulting caller staffId."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 46,
+        "description": "The shift stores both staffId and openedByUserId, but neither is used in close authorization."
+      }
+    ],
+    "blockers": [
+      "No approved complete sandbox is available to execute the required dummy-cashier mutation.",
+      "The expected identity relationship should be fixture-explicit: the attacking cashier and victim shift cashier must be different, and the owner exception must remain allowed."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated local database and router fixture, create cashiers C1/C2 in one organization and an open shift assigned to C2. Authenticate as C1 and invoke both POST /shifts/close and POST /shifts/:id/close with harmless physical-cash values, resetting fixtures between attempts. Read back the exact shift and assert C1 cannot close it. Repeat the ID alias with a different active outlet and test owner authorization separately."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/warehouses/warehouses.service.ts:unbound-outlet-parent",
+    "title": "Warehouse and staff writes accept foreign-tenant outlet parents",
+    "description": "An owner or permitted admin in organization A who knows a dummy organization-B outlet UUID can create an A warehouse under that B outlet. The same missing parent binding exists in staff create/update. The staff variant has a concrete downstream read: staff listing joins the foreign outlet by global ID and returns its name. Creating a payroll stub for that poisoned A staff record then copies the foreign outlet association into payroll. These paths establish inconsistent cross-tenant relationships; they do not establish mutation of B's existing outlet record or access to B's complete payroll.",
+    "claimed_root_cause": "Caller-controlled outletId is inserted or updated alongside authenticated organizationId without checking the referenced outlet's organization. Independent single-column foreign keys guarantee existence only. Downstream ID-only joins and payroll derivation trust the inconsistent relationship.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/staff/staff.routes.ts",
+        "line": 61,
+        "scope": "POST /staff",
+        "description": "An organization-A owner submits a valid staff body containing the known UUID of organization B's outlet."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.schemas.ts",
+        "line": 11,
+        "scope": "createStaffSchema",
+        "description": "The selector is validated as a UUID, not as an outlet owned by organization A."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.service.ts",
+        "line": 22,
+        "scope": "createStaff",
+        "description": "The body outletId takes precedence over activeOutletId and is passed directly to staffRepo.create."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 115,
+        "scope": "create",
+        "description": "The inserted row combines authenticated organization A with the foreign outlet ID."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 34,
+        "scope": "listStaff",
+        "description": "Listing A staff at A's active outlet returns the foreign outlet name through the ID-only left join. To retain the poisoned row in the selected list, create it in A's outlet first, list it to obtain its ID, then PATCH its outletId to B and use an organization-wide/null-outlet service fixture; alternatively exercise the poisoned record's payroll write as the minimum cross-tenant association result."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 81,
+        "description": "Strict isolation is a product goal; lines 124-128 define organization-owned records and the outlet hierarchy."
+      },
+      {
+        "file": "src/modules/warehouses/warehouses.routes.ts",
+        "line": 20,
+        "description": "Warehouse creation accepts the parent outletId from the URL under an owner/admin gate."
+      },
+      {
+        "file": "src/modules/warehouses/warehouses.service.ts",
+        "line": 15,
+        "description": "Warehouse creation forwards the parent without an outlet ownership lookup."
+      },
+      {
+        "file": "src/modules/warehouses/warehouses.repo.ts",
+        "line": 23,
+        "description": "The warehouse insert combines independently supplied organization and outlet identifiers."
+      },
+      {
+        "file": "src/modules/staff/staff.service.ts",
+        "line": 51,
+        "description": "PATCH staff has the same foreign outlet binding defect even though it correctly scopes the staff row itself."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 93,
+        "description": "Warehouse outletId references only outlets.id, not a composite organization/outlet key."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 12,
+        "description": "Staff outletId likewise references only the global outlet ID."
+      },
+      {
+        "file": "src/modules/payroll/payroll.service.ts",
+        "line": 16,
+        "description": "Payroll resolves staff within A but copies its unvalidated outletId at line 21, propagating a previously poisoned parent association."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 261,
+        "description": "The documented architecture does not rely on PostgreSQL RLS for tenant isolation."
+      }
+    ],
+    "blockers": [
+      "No approved execution sandbox is available to observe dummy-tenant association writes or verify actual PostgreSQL acceptance.",
+      "The staff list normally filters by activeOutletId, which hides a poisoned row whose outlet is foreign. An externally reachable foreign-outlet-name disclosure through that list has not been established; the source-visible join alone is not sufficient to claim an HTTP disclosure.",
+      "The minimum supported candidate impact is the unauthorized cross-tenant parent association and its payroll propagation, not a demonstrated foreign outlet read or foreign financial mutation."
+    ],
+    "validation_plan": {
+      "local": "In the approved isolated environment, create dummy organizations A/B and their outlets. As A owner, POST /outlets/{B-outlet}/warehouses, POST /staff with B outletId, and PATCH an existing A staff record to B outletId. Read back only the resulting dummy associations and require rejection. For the staff variant, create a payroll stub for that A staff ID and check whether the B outletId is propagated. Test any outlet-name disclosure only if an actual router path can return the poisoned row; do not count a direct null-outlet service call as proof of HTTP reachability."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/shifts/shifts.service.ts:unbound-cashier-staff-reference",
+    "title": "Shift creation launders a foreign staff ID into a cross-tenant name disclosure",
+    "description": "An authenticated organization-A caller allowed by the shift route can provide an existing organization-B staff UUID as cashierStaffId. The service inserts an A cash shift referencing B's employee without verifying tenant, outlet or caller authority over that staff record. A subsequent organization-A shift list joins the referenced staff by global ID and returns the B employee's name. This requires knowledge of an existing foreign staff UUID and does not expose the employee's salary.",
+    "claimed_root_cause": "The supplied cashierStaffId bypasses the organization-scoped staff lookup used only when no ID was supplied. The cash-shift schema has independent staff and organization foreign keys. Later reads scope the shift but not its joined staff record.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 42,
+        "scope": "POST /shifts/open",
+        "description": "A caller in organization A supplies a foreign existing cashierStaffId and a valid nonnegative startingCashIdr while A's active outlet has no open shift."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.schemas.ts",
+        "line": 6,
+        "scope": "openShiftSchema",
+        "description": "The supplied staff reference is only UUID-validated."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 34,
+        "scope": "openShift",
+        "description": "A supplied cashierStaffId skips getByUserId and is forwarded without any staff lookup."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 76,
+        "scope": "create",
+        "description": "The insert persists authenticated organization A and outlet A alongside the foreign staff ID."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 48,
+        "scope": "GET /shifts list projection",
+        "description": "The A-scoped list joins staff solely on staff.id and exposes the foreign name as cashierStaffName."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 124,
+        "description": "Tenant-owned records must be organization-isolated; lines 125-126 also establish operational outlet boundaries."
+      },
+      {
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 24,
+        "description": "The follow-up list is reachable by the authenticated A caller and uses A's active outlet, so the poisoned A shift remains in scope."
+      },
+      {
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 52,
+        "description": "The join does not compare staff.organizationId or staff.outletId with the selected shift."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 46,
+        "description": "cashShifts.staffId references only staff.id, independently of organization and outlet."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 861,
+        "description": "The migration also installs only the global staff-ID foreign key, not a composite tenant constraint."
+      }
+    ],
+    "blockers": [
+      "The foreign-staff insert and follow-up disclosure have not been executed because no complete approved sandbox exists.",
+      "The fixture must supply a known dummy foreign staff UUID and an A outlet without an existing open shift; no production identifier-discovery mechanism is assumed."
+    ],
+    "validation_plan": {
+      "local": "In the approved isolated sandbox, create organizations A/B, a harmless B employee named Dummy Foreign Cashier, and an empty A outlet. As A owner, POST /shifts/open with B's staff UUID and startingCashIdr 0, then GET /shifts for A's same active outlet. Observe only whether cashierStaffName contains the dummy foreign name. Assert both insertion rejection and absence of the foreign name after fixing tenant/outlet reference validation. Repeat with another A outlet's staff reference to test outlet binding independently."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/createSale/unrestricted-unit-price-override",
+    "title": "Cashier price overrides bypass the documented permission requirement",
+    "description": "An authenticated organization staff caller can submit unitPriceIdr, including zero, through either sales creation endpoint. The shared service uses it instead of the master price while consuming stock and recording a paid sale, without checking any override permission.",
+    "claimed_root_cause": "Both public schemas accept an optional price override, and createSale selects it without receiving or testing an authorization decision. Product-master write restrictions do not protect this alternate transaction-pricing path.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/pos/pos.routes.ts",
+        "line": 44,
+        "scope": "POST /pos/sales",
+        "description": "Authenticated outlet requests reach the sale service after schema parsing and idempotency middleware; there is no price-override authorization."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/pos/pos.schemas.ts",
+        "line": 21,
+        "scope": "posSaleSchema",
+        "description": "Accepts caller-supplied nonnegative unitPriceIdr; createSaleSchema exposes the same field."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 110,
+        "scope": "createSale",
+        "description": "Uses the supplied price directly and subsequently records a paid sale with stock deductions."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 358,
+        "description": "Cashier override is explicitly conditional on permission."
+      },
+      {
+        "file": "src/modules/products/products.routes.ts",
+        "line": 75,
+        "description": "Master-product updates require owner/admin, but the alternate sale path does not test an equivalent pricing permission."
+      }
+    ],
+    "blockers": [
+      "No approved execution sandbox is available to demonstrate the paid-sale and stock result with a dummy staff principal."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated fixture, create a cashier membership without pricing authority and a stocked product. Submit a zero override through each sibling endpoint using distinct keys. Check persisted prices, paid status and stock movements; enforce an explicit override permission and add denial/default-price regression cases."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "commerce/cashierStaffId/unbound-staff-reference",
+    "title": "Foreign staff IDs can be attached to sales and shifts and resolved to names",
+    "description": "An authenticated member of organization A who knows a staff UUID from organization B can supply it as cashierStaffId. Sale creation persists that foreign reference and resolves the staff name without a tenant predicate. Shift opening accepts the same reference, and shift listing joins it to the foreign staff name. This is foreign-object attribution and a potential cross-tenant name disclosure, not a demonstrated write to B's staff row.",
+    "claimed_root_cause": "Caller-selected staff UUIDs are not validated against organization, outlet or active state before insertion. Single-column foreign keys establish existence only; subsequent name resolution trusts the stored reference.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.schemas.ts",
+        "line": 9,
+        "scope": "createSaleSchema",
+        "description": "Accepts arbitrary syntactically valid cashierStaffId; POS exposes the same selector."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 305,
+        "scope": "createSale",
+        "description": "Persists the supplied staff reference without validating its owner."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 119,
+        "scope": "getCashierDetails",
+        "description": "Looks up staff by ID alone and returns the name in sale responses."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 124,
+        "description": "Tenant-owned rows require organization filtering."
+      },
+      {
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 34,
+        "description": "Provided cashierStaffId bypasses the organization-filtered fallback staff lookup."
+      },
+      {
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 52,
+        "description": "Shift listing joins staff by the stored staffId alone and selects cashierStaffName."
+      },
+      {
+        "file": "src/db/schema/sales.ts",
+        "line": 25,
+        "description": "Staff reference is a single-ID foreign key, not a composite tenant-binding constraint."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 46,
+        "description": "Shift staff reference also checks only staff ID existence."
+      }
+    ],
+    "blockers": [
+      "A bounded two-tenant integration check has not been executed because no approved complete sandbox is available.",
+      "Attack requires a foreign staff UUID; no UUID discovery mechanism is claimed."
+    ],
+    "validation_plan": {
+      "local": "Create dummy tenants A/B and one B staff record. As A, submit that UUID to sale creation and shift opening, then inspect the sale response and A shift listing. Require tenant/outlet-bound active staff validation and test foreign, inactive and nonexistent references."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/cancelSale/incomplete-void-authorization",
+    "title": "Void authorization omits same-shift binding and permits historical admin voids",
+    "description": "A non-owner admin without staffRole cashier can cancel old sales because the day restriction applies only to orgRole staff or staffRole cashier. Staff can cancel same-day sales belonging to a previous or closed shift because no shift check exists. Both paths alter stock, revenue metrics and attached shift totals.",
+    "claimed_root_cause": "Cancellation substitutes a limited calendar-day check for the documented owner/manager/cashier permission and same-shift rules. It neither reserves historical exceptions for owners nor binds ordinary voids to an active shift.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 56,
+        "scope": "POST /sales/:id/cancel",
+        "description": "Any authenticated caller with outlet context reaches cancelSale."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 569,
+        "scope": "cancelSale role restriction",
+        "description": "Checks same day only for staff or cashier roles; no same-shift or cashier-permission check follows."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 597,
+        "scope": "cancellation transaction",
+        "description": "Cancels the selected outlet sale and reverses stock and financial effects."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 382,
+        "description": "Requires voids within the same shift and prohibits post-D+1 voids without Owner."
+      },
+      {
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 217,
+        "description": "The strongest selector binds organization/outlet/sale, but does not establish void authority or shift membership."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox is available for dummy historical-admin and same-day-closed-shift regression cases."
+    ],
+    "validation_plan": {
+      "local": "Use an isolated fixture containing a sale older than D+1 and a same-day sale from a closed shift. Invoke cancellation as a non-owner admin and ordinary cashier respectively, recording status, stock and reconciliation changes. Add explicit owner exceptions and same-shift/permission checks."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "idempotency/requireIdempotencyKey/postcommit-unreserved-key",
+    "title": "Concurrent same-key sale submissions can commit multiple financial transactions",
+    "description": "Two authenticated same-key submissions can both observe no cached response and proceed into separate sale transactions. Unique document numbering and stock locks serialize selected database work but do not reject the second logical sale. Cache insertion occurs only after the business transaction, and duplicate-save errors are ignored.",
+    "claimed_root_cause": "Idempotency is implemented as a post-commit response cache, not an atomic reservation and result record coupled to the financial transaction.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "POST /sales",
+        "description": "Requires an idempotency UUID; POS uses the same middleware."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/idempotency.ts",
+        "line": 50,
+        "scope": "requireIdempotencyKey",
+        "description": "Performs a cache lookup and calls next without reserving the missing key."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 88,
+        "scope": "createSale",
+        "description": "Commits stock, paid sale and aggregates without an idempotency identity."
+      },
+      {
+        "kind": "sink",
+        "file": "src/middleware/idempotency.ts",
+        "line": 87,
+        "scope": "res.json response hook",
+        "description": "Saves the response asynchronously after successful business execution and ignores duplicate or persistence errors."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/db/schema/ops.ts",
+        "line": 19,
+        "description": "Unique key applies only to response-cache rows, not sale creation."
+      },
+      {
+        "file": "tests/pos-idempotency.test.ts",
+        "line": 42,
+        "description": "The double-submit test mocks an existing cached response; it does not run concurrent cache misses."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1163,
+        "description": "Documents idempotency and replay on a uniqueness race."
+      }
+    ],
+    "blockers": [
+      "No parent-approved sandbox with a disposable PostgreSQL fixture exists to observe concurrent commits and cache persistence."
+    ],
+    "validation_plan": {
+      "local": "Barrier two identical dummy requests after their empty key lookup, release both against sufficient stock, and count committed sales, movements and aggregates. Also exercise a save failure followed by retry. Couple key reservation/result persistence to sale commit and require a single resulting sale."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/cancelSale/non-atomic-status-transition",
+    "title": "Concurrent cancellation can return stock and reverse aggregates twice",
+    "description": "Two permitted cancellation requests can both read a paid sale before entering their transactions. Both then update it by ID without a status predicate and execute reversal effects. Balance locks serialize additions but do not prevent the second reversal.",
+    "claimed_root_cause": "The status decision is outside the transaction, and the update does not conditionally transition paid to cancelled or verify affected-row ownership of that transition.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 56,
+        "scope": "cancel route",
+        "description": "Accepts repeated cancellation requests without idempotency middleware."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 560,
+        "scope": "cancelSale",
+        "description": "Rejects cancelled status using a sale read obtained before the transaction."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 605,
+        "scope": "sale status update",
+        "description": "Updates by sale ID alone, allowing a waiting transaction to repeat the cancellation."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 677,
+        "scope": "finished-good reversal",
+        "description": "Adds quantity back under a balance lock; subsequent aggregate and shift deductions also repeat."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 630,
+        "description": "Recipe-based return has the same locked-balance but unguarded-transition structure."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 712,
+        "description": "GREATEST clamps repeated financial deductions but does not prevent duplicate reversal or protect other sales' totals."
+      }
+    ],
+    "blockers": [
+      "Deterministic PostgreSQL cancellation interleaving has not been executed because the required sandbox is unavailable."
+    ],
+    "validation_plan": {
+      "local": "Pause two dummy cancellations after both read paid status, then release them. Assert exactly one success, one stock return, and one aggregate/shift reversal. Acquire a sale lock before checking state or use a conditional transition with RETURNING before any reversal."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/createSale/unscoped-movement-ref-rewrite",
+    "title": "Each new sale reassigns the cashier's historical stock movements",
+    "description": "Creating a sale rewrites refId on every sale_out movement belonging to the same organization and actor, including earlier sales and other outlets. A cashier can therefore destroy the owner\u2019s historical sale-to-stock attribution through an ordinary subsequent sale.",
+    "claimed_root_cause": "Temporary random movement references are finalized using an organization/type/actor predicate rather than IDs of movements created by the current transaction.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "sale creation",
+        "description": "An authenticated member creates another legitimate sale."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 202,
+        "scope": "stock movement creation",
+        "description": "Recipe movements receive temporary random references; finished-good movements do likewise."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 336,
+        "scope": "movement reference finalization",
+        "description": "Updates every matching historical sale_out movement for the actor to the newly created sale ID, without current movement, old reference or outlet filtering."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 341,
+        "description": "The complete rewrite predicate contains only organizationId, type sale_out and actorUserId."
+      }
+    ],
+    "blockers": [
+      "No approved execution sandbox is available to observe two persisted dummy sales and their movement references."
+    ],
+    "validation_plan": {
+      "local": "Create two stocked dummy sales sequentially as one actor and inspect movements after each. Include two outlets. Earlier movement references must remain unchanged. Allocate the sale UUID before movements or finalize only the exact inserted movement IDs."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/cancelSale/mutable-recipe-reversal",
+    "title": "Cancellation returns today's recipe rather than the quantities originally consumed",
+    "description": "A sale consumes stock using the recipe and product kind at creation, but cancellation loads their current values. If an authorized catalog editor changes a recipe or kind before a permitted cashier void, that void can add quantities never deducted and omit quantities that were deducted.",
+    "claimed_root_cause": "Reversal reconstructs historical stock effects from mutable catalog state rather than immutable sale-linked stock movement snapshots.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 541,
+        "scope": "cancelSale",
+        "description": "A permitted caller cancels a previously paid sale."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 581,
+        "scope": "catalog loading for reversal",
+        "description": "Loads current product rows and current recipe lines."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 616,
+        "scope": "recipe reversal",
+        "description": "Computes returned stock from current line.qty times historical sale item quantity and adds it to balances."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 127,
+        "description": "Creation consumes using the recipe quantity available at sale time."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 613,
+        "description": "Current product kind chooses the cancellation reversal branch."
+      },
+      {
+        "file": "src/modules/products/products.service.ts",
+        "line": 101,
+        "description": "Product updates delegate to updateWithRecipe, allowing the catalog state used by a later void to change."
+      },
+      {
+        "file": "src/db/schema/sales.ts",
+        "line": 47,
+        "description": "Sale items snapshot product name, quantity, price and cost, but not consumed recipe components."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox is available to observe a recipe change followed by a dummy cashier cancellation.",
+      "This requires an intervening authorized catalog edit; no ability for an ordinary cashier to edit recipes is claimed."
+    ],
+    "validation_plan": {
+      "local": "Create a sale consuming a known component quantity, update its recipe through an authorized dummy manager, and cancel as an eligible cashier. Compare every balance and movement with the original deductions. Reverse immutable per-sale movement quantities and historical costs rather than current catalog values."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "sales/createSale/unbounded-discount-total",
+    "title": "Excessive discounts can create negative paid sales and reduce drawer totals",
+    "description": "Ordinary staff can supply a discount greater than the subtotal through either creation schema. createSale subtracts it without checking the resulting total, records paid status, consumes stock, and adds the negative amount to revenue and cash-shift counters.",
+    "claimed_root_cause": "Field-level nonnegative checks are not followed by the documented cross-field constraints discount <= subtotal and total >= 0. The sale schema contains no corresponding database check.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.schemas.ts",
+        "line": 6,
+        "scope": "createSaleSchema",
+        "description": "Accepts any nonnegative integer discount; POS exposes equivalent validation."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 295,
+        "scope": "total calculation",
+        "description": "Subtracts discount without validating it against subtotal or rejecting a negative total."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 353,
+        "scope": "cash shift accumulation",
+        "description": "Adds totalIdr, potentially negative, to the attached drawer\u2019s cashSalesIdr; paid sale and daily metrics use the same amount."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 370,
+        "description": "Explicitly requires total >= 0 and discount <= subtotal."
+      },
+      {
+        "file": "src/db/schema/sales.ts",
+        "line": 30,
+        "description": "Sale monetary fields are signed bigint columns without cross-field checks."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox is available for a negative-sale integration check and persisted aggregate observations."
+    ],
+    "validation_plan": {
+      "local": "Create a stocked dummy product and open drawer, then submit a cash sale whose discount exceeds subtotal and tax. Verify rejection without stock, sale or aggregate changes. Enforce both documented cross-field constraints and test exact-boundary discounts through both routes."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "shifts/openShift/non-atomic-open-invariant",
+    "title": "Concurrent opening can create multiple active drawers for one outlet",
+    "description": "Two authenticated staff requests can both observe no active shift and insert separate open shifts. Later sale attachment selects one without deterministic ordering, splitting or misattributing drawer accounting.",
+    "claimed_root_cause": "The one-open-shift check and insert are separate operations, and the database has only a nonunique outlet/status index rather than a partial unique constraint.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 42,
+        "scope": "POST /shifts/open",
+        "description": "Allows owner, admin and staff to open a shift."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 25,
+        "scope": "openShift",
+        "description": "Checks for an existing open shift before a separate create call."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 76,
+        "scope": "create",
+        "description": "Inserts an open shift without an atomic per-outlet exclusion control."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 427,
+        "description": "Requires one open shift per outlet."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 64,
+        "description": "Defines a nonunique outlet/status index."
+      },
+      {
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 57,
+        "description": "Fallback sale attachment selects an arbitrary matching open shift with limit(1)."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 1019,
+        "description": "Migration likewise creates only a nonunique open-shift lookup index."
+      }
+    ],
+    "blockers": [
+      "No approved disposable PostgreSQL sandbox is available to demonstrate the two-request opening schedule."
+    ],
+    "validation_plan": {
+      "local": "Barrier two valid dummy open requests after their empty lookup, then release both. Assert one open row and one conflict. Add a partial unique index for open shifts per outlet and translate uniqueness conflicts into SHIFT_ALREADY_OPEN."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "shifts/closeShift/unserialized-reconciliation",
+    "title": "Shift closure can certify stale totals while sales or voids modify the closed drawer",
+    "description": "A cashier can close a drawer using totals read before another sale commits. The sale retains the openShift object loaded before its transaction and later updates the shift without an open-status predicate. Cancellation also changes closed-shift sales counters without recomputing difference/status. A drawer can consequently remain marked balanced with a stale persisted difference.",
+    "claimed_root_cause": "Reconciliation reads and finalization are not serialized with financial writes to the attached shift, and closed-state updates do not preserve or recompute the reconciliation invariant.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 52,
+        "scope": "shift close routes",
+        "description": "Both close aliases delegate to the same nontransactional reconciliation service."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 65,
+        "scope": "closeShift",
+        "description": "Computes expected cash and difference from a previously read shift snapshot."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 106,
+        "scope": "close",
+        "description": "Writes final status and difference by ID without locking the read or requiring the row still be open."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 355,
+        "scope": "sale shift update",
+        "description": "Updates the previously selected shift by ID even after closure, without correcting difference or balanced/variance status."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 432,
+        "description": "Defines expected cash, difference and balanced/variance as linked reconciliation values."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 38,
+        "description": "Open shift selection occurs before the sale transaction."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 731,
+        "description": "Void subtracts attached shift cash totals without checking closed state or recomputing reconciliation."
+      },
+      {
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 42,
+        "description": "Listing derives expectedCashIdr from current counters but returns stored differenceIdr, making the disagreement observable."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox is available for a real close-versus-sale race or sequential post-close void observation."
+    ],
+    "validation_plan": {
+      "local": "Pause sale creation after open-shift selection, close the dummy drawer, then allow the sale to commit. Compare derived expected cash, physical cash, stored difference and status. Repeat with a permitted post-close void. Serialize shift selection/accounting/finalization under the same lock and define an explicit immutable-close or reconciliation-adjustment policy."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "inventory/explicit-warehouse/unbound-balance-mutation",
+    "title": "Explicit warehouse references can target another organization's stock",
+    "description": "An authenticated organization-A staff member who knows organization-B warehouse and item UUIDs can supply them to waste creation; the source path locks and decrements B's existing balance while recording the waste under A. Adjustment and approved-opname paths expose the same unbound balance operation. The minimum affected resource is one foreign inventory balance, not all tenant data.",
+    "claimed_root_cause": "Caller-supplied warehouseId is accepted without loading a warehouse owned by ctx.organizationId and the active outlet. Shared balance lookup/update helpers omit organization binding. Separate single-column foreign keys validate existence, not agreement between organization, outlet and warehouse.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/wastes/wastes.routes.ts",
+        "line": 32,
+        "scope": "POST /wastes",
+        "description": "Authenticated growth-plan staff may submit a parsed waste body, including an explicit warehouse UUID and item UUID."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 27,
+        "scope": "wastesService.createWaste",
+        "description": "Only an omitted warehouse invokes getDefaultWarehouse with organization/outlet filters; an explicit warehouse is passed directly to the balance lookup."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 99,
+        "scope": "inventoryRepo.findBalanceForUpdate",
+        "description": "SELECT FOR UPDATE identifies a balance solely by warehouseId, itemType and itemId and returns quantity and cost without an organization predicate."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 133,
+        "scope": "inventoryRepo.upsertBalance",
+        "description": "An existing foreign balance is updated by its primary key. The caller organization supplied to the helper is used only for insertion and does not restrict this update."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 259,
+        "description": "The explicit tenant-isolation contract requires token-A requests to organization-B resources to return 404; line 261 states v1 does not use RLS."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 71,
+        "description": "Authentication establishes organization and outlet context, but does not inspect body warehouse references."
+      },
+      {
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 42,
+        "description": "The stock-availability check can succeed against the selected foreign balance; line 57 then writes the decremented balance."
+      },
+      {
+        "file": "src/modules/inventory/inventory.service.ts",
+        "line": 55,
+        "description": "Adjustment creation has the same explicit-warehouse bypass. Its item existence check at lines 65-70 also omits organization and deletedAt."
+      },
+      {
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 25,
+        "description": "Opname creation accepts the same unbound warehouse and snapshots its balance. Approval at lines 77-95 subsequently mutates that balance; this variant requires an A owner/admin approval."
+      },
+      {
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 31,
+        "description": "Sibling transfer creation demonstrates the stronger control: both warehouses must match ctx.organizationId."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 10,
+        "description": "Organization, outlet and warehouse are independent foreign keys; the warehouse/type/item unique key and quantity checks do not enforce matching ownership."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 729,
+        "description": "The migrated balance-to-warehouse constraint is a single-column warehouse UUID foreign key, not a tenant-composite ownership constraint."
+      }
+    ],
+    "blockers": [
+      "No approved complete sandbox exists for dummy-tenant application/PostgreSQL execution, so cross-tenant mutation has not been locally observed.",
+      "The attacker must already know the foreign warehouse and item UUIDs; this review does not establish a UUID-discovery path."
+    ],
+    "validation_plan": {
+      "local": "Inside a parent-approved offline bounded sandbox, seed organizations A and B, an A staff session/outlet, and a B warehouse/item with positive unreserved stock. Submit one A waste request selecting B's warehouse/item and a small positive quantity. Check B's balance and A's waste/movement records, then repeat after enforcing warehouse organization/outlet binding and expect 404 with no changes. Separately verify adjustment and approved-opname variants. Do not use real records."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "products/getComponentUnitCosts/unscoped-ingredient-fallback",
+    "title": "HPP preview can disclose another organization's ingredient purchase cost",
+    "description": "Any authenticated organization-A caller who knows a B ingredient UUID can submit it as an ingredient component to the HPP preview. The balance query initially filters A, but when no matching positive-cost balance exists it falls back to an ingredient lookup by UUID alone. The returned recipeDetails exposes B's purchase cost.",
+    "claimed_root_cause": "The ingredient purchase-cost fallback drops the organization predicate used by the preceding inventory balance query. Neither preview nor saved recipe writing validates ingredient ownership before passing component identifiers into this fallback.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/products/products.routes.ts",
+        "line": 36,
+        "scope": "POST /products/preview-hpp",
+        "description": "The authenticate-protected route accepts arbitrary recipe component UUIDs without an owner/admin role requirement and calls calculateHpp."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/products/products.service.ts",
+        "line": 42,
+        "scope": "productsService.calculateHpp",
+        "description": "The caller's recipe reaches getComponentUnitCosts; the resulting unitCost and subtotal are included in recipeDetails."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/products/products.repo.ts",
+        "line": 191,
+        "scope": "productsRepo.getComponentUnitCosts",
+        "description": "The first ingredient balance lookup filters organizationId. Absence of a positive-cost A balance triggers the fallback."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/products/products.repo.ts",
+        "line": 208,
+        "scope": "ingredient purchase-cost fallback",
+        "description": "The fallback selects purchasePriceIdr and lastPurchaseUnitCost using only ingredients.id, then returns that foreign value for inclusion in the HTTP response."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 259,
+        "description": "Cross-tenant resource access must be rejected with 404."
+      },
+      {
+        "file": "src/modules/products/products.repo.ts",
+        "line": 196,
+        "description": "The preceding balance lookup demonstrates organization scoping, but the ingredients lookup at line 214 does not preserve it or a deletedAt predicate."
+      },
+      {
+        "file": "src/modules/products/products.service.ts",
+        "line": 49,
+        "description": "Each response recipe detail includes the calculated unitCost and subtotal, making the cost owner-observable rather than only internally consumed."
+      },
+      {
+        "file": "src/modules/products/products.repo.ts",
+        "line": 105,
+        "description": "Persisted recipe creation also accepts componentId without tenant validation; update has the same behavior at lines 152-163."
+      },
+      {
+        "file": "src/modules/ingredients/ingredients.repo.ts",
+        "line": 73,
+        "description": "The normal ingredient detail lookup correctly combines id, organizationId and deletedAt, unlike the HPP fallback."
+      },
+      {
+        "file": "src/db/schema/catalog.ts",
+        "line": 88,
+        "description": "Recipe component references are polymorphic UUIDs without an ownership-enforcing foreign key."
+      }
+    ],
+    "blockers": [
+      "No approved complete sandbox exists to demonstrate the response with two dummy tenants.",
+      "The caller must already know the foreign ingredient UUID; enumeration is not established."
+    ],
+    "validation_plan": {
+      "local": "Seed A and B in an approved offline sandbox, with a B ingredient carrying a recognizable dummy purchaseUnitCost and no A balance for that component. As an A staff fixture, preview a one-component ingredient recipe and inspect recipeDetails.unitCost. Verify a tenant-scoped fallback and component validation reject B's UUID without returning the price. Exercise both preview and a saved A recipe containing that UUID."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "transfers/terminal-transition/pretransaction-status-check",
+    "title": "Concurrent transfer terminal requests can apply stock receipt or return more than once",
+    "description": "A growth-plan staff caller can race two receive requests for one in-transit transfer. Both can pass the status check before either commits, then each adds the quantity to an existing destination balance. An owner/admin can similarly race cancellations or cancellation against receipt, potentially crediting both warehouses for one transfer. Sequential retries are rejected, but the status gate is not atomic with the stock effect.",
+    "claimed_root_cause": "receiveTransfer and cancelTransfer load and check the transfer outside the transaction, never lock or reread its header inside the transaction, and finalize it with an unconditional primary-key update. Inventory row locks protect balance arithmetic but not one-time document consumption.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/transfers/transfers.routes.ts",
+        "line": 47,
+        "scope": "POST /transfers/:id/receive and /:id/cancel",
+        "description": "Staff may receive transfers and owner/admin may cancel them. These terminal routes do not apply requireIdempotencyKey."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/transfers/transfers.repo.ts",
+        "line": 42,
+        "scope": "transfersRepo.getTransferById",
+        "description": "The header lookup is correctly organization-scoped but is an unlocked ordinary read."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 157,
+        "scope": "transfersService.receiveTransfer",
+        "description": "The in_transit check occurs before db.transaction. Two requests can retain the same eligible snapshot while one waits for the destination balance lock."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 183,
+        "scope": "receipt stock credit and final status",
+        "description": "Each transaction adds lineQty, emits transfer_in and updates the transfer by id at lines 215-218, without checking that the document remains in_transit."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1418,
+        "description": "Receipt credits the destination and completes the transfer; cancellation credits the origin and is permitted only for in_transit."
+      },
+      {
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 225,
+        "description": "Cancellation repeats the pretransaction eligibility check, credits the origin at lines 251-263 and finalizes by id only at lines 282-285."
+      },
+      {
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 115,
+        "description": "FOR UPDATE locks the selected inventory balance, not the transfer header. Existing balance locking therefore does not reject stale transfer eligibility."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 67,
+        "description": "Movement reference indexing is nonunique; it does not constrain one receipt/cancellation effect per transfer. Transfer status schema has no compare-and-set behavior."
+      },
+      {
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 54,
+        "description": "Creation debits the origin and creates the document in one transaction, so the candidate concerns terminal eligibility rather than partial creation."
+      }
+    ],
+    "blockers": [
+      "No complete approved sandbox is available to execute deterministic concurrent PostgreSQL transactions and observe the duplicated stock credit.",
+      "Validation must use an existing destination balance to avoid conflating the status race with concurrent first-row insertion conflicts."
+    ],
+    "validation_plan": {
+      "local": "In an approved offline sandbox, seed one in_transit transfer and existing source/destination balance rows. Pause two receive calls after both read in_transit, then release them through real PostgreSQL transactions. Assert only one line quantity and one terminal movement are accepted. Repeat two cancellations and receive-versus-cancel. Verify that locking and rechecking the transfer header before stock changes, or an atomic pending-state claim within the same transaction, makes exactly one terminal request succeed."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "opnames/decision/pretransaction-status-check",
+    "title": "Concurrent opname decisions can apply one variance repeatedly or disagree with final status",
+    "description": "An organization owner/admin can submit concurrent approvals of one pending opname and cause both transactions to apply its stored variance to an existing balance. Approval racing rejection can also leave a rejected document whose adjustment already changed stock, depending on the commit order. This violates the one-decision inventory reconciliation boundary, although ordinary sequential duplicate approvals are rejected.",
+    "claimed_root_cause": "approveOpname and rejectOpname check pending_review using an unlocked read outside the mutation transaction. Approval applies the saved variance and both decision paths write status by id without a pending_review predicate or locked header reread.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/opnames/opnames.routes.ts",
+        "line": 47,
+        "scope": "POST /opnames/:id/approve and /:id/reject",
+        "description": "Growth-plan owner/admin requests reach the competing decision methods."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.repo.ts",
+        "line": 49,
+        "scope": "opnamesRepo.getById",
+        "description": "The ordinary header read binds organization but does not lock the pending record."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 65,
+        "scope": "opnamesService.approveOpname",
+        "description": "pending_review is checked before the transaction begins; stored variance remains eligible in both concurrent callers."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 85,
+        "scope": "variance application and decision write",
+        "description": "Each approval adds the same variance to the current locked balance and emits a movement, then changes status by id at lines 114-121 without a prior-state predicate."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1655,
+        "description": "Pending opname must not change stock; approval is the decision that applies the adjustment."
+      },
+      {
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 128,
+        "description": "Rejection similarly reads/checks pending_review and then updates by id outside the approval transaction, permitting approval/rejection disagreement."
+      },
+      {
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 99,
+        "description": "The locked balance read serializes arithmetic but does not protect the opname's decision state."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 29,
+        "description": "Nonnegative/reserved quantity constraints can reject some negative-variance schedules. They do not prevent repeating a positive variance, which is the bounded validation case."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 144,
+        "description": "The opname schema provides an organization/time index, not a mechanism enforcing one terminal decision or one associated ledger effect."
+      }
+    ],
+    "blockers": [
+      "No complete approved sandbox exists for a deterministic real-PostgreSQL approval/decision race.",
+      "No locally observed duplicate movement or final-status disagreement is available; conclusions remain source-grounded candidates."
+    ],
+    "validation_plan": {
+      "local": "In an approved offline sandbox, create one pending opname with a small positive variance and an existing balance. Pause two approval calls after their pending reads, then release both and inspect balance, movements and final header. Separately race approval and rejection with controlled decision-write order. Require one terminal decision and at most one variance effect. Verify transactional header locking/rechecking or atomic pending-state claiming in both approval and rejection paths."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/ai/ai.service.ts:chat:missing-plan-daily-accounting",
+    "title": "AI chat does not enforce the advertised daily plan allocation",
+    "description": "An authenticated member can submit additional chat messages after the organization's advertised daily allocation. Each accepted call performs shared database aggregation and persists messages rather than returning the documented quota response. The affected resource is the operator-provided per-plan AI/DB allocation; this is not a claim that rule-based chat incurs model charges or that an outage has been demonstrated.",
+    "claimed_root_cause": "Daily limits are returned as billing metadata but are not checked, reserved or incremented on the chat execution path. Neither changing conversation IDs nor resetting conversations reaches an aggregate usage counter.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/ai/ai.routes.ts",
+        "line": 10,
+        "scope": "POST /api/v1/ai/chat and /api/ai/chat",
+        "description": "Authenticated requests parse aiChatSchema and invoke chat without a quota middleware."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/ai/ai.schemas.ts",
+        "line": 9,
+        "scope": "aiChatSchema",
+        "description": "Caps each message at 2000 characters but imposes no aggregate daily allocation."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 120,
+        "scope": "chat",
+        "description": "Inserts the user message and then requests business context without checking planCode usage."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 154,
+        "scope": "chat assistant persistence",
+        "description": "Completes the request by storing an assistant message; the excess call consumes shared DB work and storage."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 638,
+        "description": "Defines 20, 200, 1000 and 5000 AI chat messages per day by plan."
+      },
+      {
+        "file": "src/modules/billing/billing.service.ts",
+        "line": 30,
+        "description": "Advertises aiDailyLimit through getAiLimit without connecting it to admission accounting."
+      },
+      {
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 95,
+        "description": "The complete chat method contains conversation validation, writes and aggregation but no daily counter."
+      },
+      {
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 209,
+        "description": "Reset soft-deletes the conversation and creates another; it does not reclaim old messages or enforce aggregate usage."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox was available for a bounded route-level quota-boundary fixture.",
+      "An independently deployed per-organization AI quota gate, its accounting scope and its treatment of both API aliases were not observable."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated fixture, seed a starter organization with its daily allocation already consumed. Submit one short chat request using mocked DB aggregation. Verify whether it returns 429 before writes and context queries. Repeat against both API mounts and a fresh conversation ID without generating a large history.",
+      "deployment": "Have the owner inspect existing gateway or service configuration for an authenticated organization-level daily message counter, including day timezone, concurrency atomicity and both API aliases. Do not generate traffic to exhaust a live quota."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/outlets/outlets.service.ts:createOutlet:non-atomic-outlet-quota",
+    "title": "Concurrent outlet creation can pass the same remaining subscription slot",
+    "description": "An organization owner with one outlet slot remaining can issue two overlapping creation requests. Both can observe the same active count and pass the subscription limit before their separate transactions insert outlets and default warehouses. The crossed boundary is the provider's explicit outlet allocation, not another organization's data.",
+    "claimed_root_cause": "The quota decision occurs outside the creation transaction and is not serialized on a stable organization or subscription row. The reviewed outlets schema has an organization index but no quota-enforcing constraint.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/outlets/outlets.routes.ts",
+        "line": 19,
+        "scope": "POST /outlets",
+        "description": "Authorizes an owner, parses the body and invokes createOutlet."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/outlets/outlets.service.ts",
+        "line": 19,
+        "scope": "createOutlet quota decision",
+        "description": "Reads active count and subscription limit before checking currentCount >= limit."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/outlets/outlets.service.ts",
+        "line": 30,
+        "scope": "creation handoff",
+        "description": "Calls the repository after the unsynchronized quota check."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/outlets/outlets.repo.ts",
+        "line": 39,
+        "scope": "createOutletWithDefaultWarehouse",
+        "description": "Starts an independent insert transaction without rechecking or reserving the remaining subscription slot."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/modules/outlets/outlets.service.ts",
+        "line": 19,
+        "description": "Count/check and creation are separate operations."
+      },
+      {
+        "file": "src/modules/outlets/outlets.repo.ts",
+        "line": 13,
+        "description": "The active count is an ordinary SELECT, not a serialized quota reservation."
+      },
+      {
+        "file": "src/modules/outlets/outlets.repo.ts",
+        "line": 54,
+        "description": "Each accepted outlet creation also creates a default warehouse."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 81,
+        "description": "The reviewed outlet schema defines an organization index, not an aggregate outlet-limit guard."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox was available for a deterministic two-request database schedule.",
+      "Independent deployed database triggers, request serialization or subscription-reservation controls were not observable."
+    ],
+    "validation_plan": {
+      "local": "Use a disposable database in the approved sandbox with a dummy subscription limit of two and one existing outlet. Barrier exactly two calls after both count reads, then release their insert transactions. Observe the final count and created warehouse records; do not increase concurrency or volume.",
+      "deployment": "Have the owner inspect schema and request-admission configuration for an organization-scoped lock or atomic quota reservation not represented in the source."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/sales/sales.routes.ts:create:expired-subscription-write",
+    "title": "Expired subscriptions are not checked on sale creation",
+    "description": "A member with an otherwise valid session in an explicitly expired organization can reach the sale-writing service. The source's expiration rejection exists only in requirePlan, which the sales router does not install. This conflicts with the documented read-only expiration boundary and permits continued provider-hosted write operations; no actual expired-tenant write was executed.",
+    "claimed_root_cause": "Subscription expiration is treated as an optional feature-level check rather than a mutation invariant. Authentication reads the expired status but does not reject writes, and sales creation never consumes that status.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "POST /sales",
+        "description": "The creation route applies authentication, outlet context and an idempotency key, but no expiration gate."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authenticate.ts",
+        "line": 80,
+        "scope": "subscription context",
+        "description": "Copies subscription plan and status into req.ctx without rejecting expired mutations."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 88,
+        "scope": "createSale transaction",
+        "description": "Starts transactional sale work after outlet, product and recipe checks without inspecting planStatus."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 175,
+        "scope": "inventory mutation during sale",
+        "description": "Updates inventory balances and then persists stock movements for the accepted sale."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1578,
+        "description": "Requires expired subscriptions to be read-only, returning PLAN_REQUIRED for POST operations."
+      },
+      {
+        "file": "src/middleware/requirePlan.ts",
+        "line": 31,
+        "description": "An explicit expiration rejection exists but applies only where this middleware is installed."
+      },
+      {
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 8,
+        "description": "Router-wide middleware is authenticate and requireOutlet, not requirePlan."
+      },
+      {
+        "file": "src/modules/pos/pos.service.ts",
+        "line": 11,
+        "description": "The POS creation facade delegates to the same salesService, providing a sibling path to the same unchecked mutation."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox was available to execute a single dummy sale for an expired organization.",
+      "Independent deployment-level enforcement of expired-organization read-only access was not observable."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated fixture, create one dummy expired subscription, valid member/session, one outlet and one stocked finished-good product. Submit one sale with a fresh idempotency key. Assert PLAN_REQUIRED and no inventory or sale changes; cover the POS facade as the same root-cause variant.",
+      "deployment": "Have the owner inspect any external entitlement gate for explicit expired-status rejection on all mutation routes. A payment gateway is not a prerequisite for this check."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/auth/auth.service.ts:registerStart:preauth-argon2-admission",
+    "title": "Public registration admits memory-hard hashing before ownership or workload admission",
+    "description": "An anonymous caller can submit a short valid registration with a fresh email and cause Argon2id work before email ownership is established. The hash explicitly requests memoryCost 19456, timeCost 2 and parallelism 1; success then retains user, registration and OTP records. The resource boundary is shared backend hashing capacity and operator-owned identity storage used by other organizations. Effective admission and shared impact remain unvalidated, so this is not a confirmed denial of service.",
+    "claimed_root_cause": "The registration route has input validation and a global 1 MB JSON bound but no source-visible rate or concurrency admission before memory-hard hashing. Unique email checks limit duplicate records, not fresh-email hashing or aggregate retained identities.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 18,
+        "scope": "POST /auth/register",
+        "description": "Public route parses registration input and directly invokes registerStart."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.schemas.ts",
+        "line": 3,
+        "scope": "registerStartSchema",
+        "description": "Bounds name, phone and password, including a 128-character password maximum; no ownership proof is required."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 34,
+        "scope": "registerStart",
+        "description": "After a fresh-email lookup, calls hashPassword before creating pending identity and OTP records."
+      },
+      {
+        "kind": "sink",
+        "file": "src/lib/password.ts",
+        "line": 4,
+        "scope": "Argon2id hashing",
+        "description": "Allocates memory-hard shared-service work with explicit memoryCost 19456 and timeCost 2 before authentication or ownership verification."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/app.ts",
+        "line": 37,
+        "description": "The source-visible earliest body bound is 1 MB, which does not impose an aggregate hashing-work budget."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 39,
+        "description": "Hashing precedes pending-user creation and any OTP ownership proof."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 27,
+        "description": "Successful requests insert users; subsequent repository calls separately insert registrations and OTP records."
+      },
+      {
+        "file": "src/lib/password.ts",
+        "line": 6,
+        "description": "The hashing resource parameters are explicitly set rather than inferred from library defaults."
+      }
+    ],
+    "blockers": [
+      "Ingress request rates and concurrency, effective Argon2 scheduling, process isolation and per-instance capacity are not visible in source.",
+      "Cleanup or external retention policy for abandoned pending users, registrations and OTPs is not established.",
+      "No approved sandbox was available for a bounded hash-admission fixture; no shared-service or saturation test was attempted."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated fixture, replace hashing and persistence with deterministic counters and a controllable unresolved hash promise. Submit only two dummy fresh-email registrations and observe whether both enter hashing before either finishes. Do not invoke real Argon2 concurrently or attempt exhaustion.",
+      "deployment": "Have the owner inspect existing ingress/admission limits, worker scheduling and pending-registration retention configuration. Use configuration and existing metrics to decide whether anonymous admitted work can materially compete with other tenants; do not stress the running service."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/app.ts:pino-http:authorization-header-logging",
+    "title": "Default HTTP request logging retains bearer credentials",
+    "description": "Routine request-completion logging is configured to retain request headers without credential redaction. The same Authorization header carries reusable access tokens. A log reader outside the authenticated principal's authority could obtain and replay a still-valid token; the actual log-reader boundary and emitted output require validation.",
+    "claimed_root_cause": "The application enables pino-http's default request serializer while neither its options nor the shared Pino logger redact Authorization. Matching installed dependency source copies req.headers into the logged request binding.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/app.ts",
+        "line": 38,
+        "scope": "HTTP logging middleware",
+        "description": "Incoming requests enter pino-http before the API routers; no credential-removing serializer is configured."
+      },
+      {
+        "kind": "propagation",
+        "file": "node_modules/pino-http/logger.js",
+        "line": 145,
+        "scope": "loggingMiddleware",
+        "description": "The default middleware binds the request object to the logger used when the response completes."
+      },
+      {
+        "kind": "propagation",
+        "file": "node_modules/pino-std-serializers/lib/req.js",
+        "line": 88,
+        "scope": "reqSerializer",
+        "description": "The serializer copies req.headers, including Authorization, into the serialized request."
+      },
+      {
+        "kind": "sink",
+        "file": "node_modules/pino-http/logger.js",
+        "line": 130,
+        "scope": "successful response logging",
+        "description": "Request completion emits the response through the request-bound logger without application redaction."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/app.ts",
+        "line": 39,
+        "description": "pino-http receives the shared logger and custom request-ID properties, but no redaction or safe request serializer."
+      },
+      {
+        "file": "src/lib/logger.ts",
+        "line": 4,
+        "description": "The shared logger configures level and development pretty transport only."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 10,
+        "description": "Authorization is consumed as the bearer authentication capability; signature, live session, user, and membership checks limit replay to a still-valid credential."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1668,
+        "description": "The security requirements prohibit logging tokens."
+      },
+      {
+        "file": "node_modules/pino-std-serializers/lib/req.js",
+        "line": 88,
+        "description": "The inspected serializer source retains all request headers. Its installed version matches package-lock.json."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox provides all required network, environment, scratch-write, aggregate resource, and artifact-promotion controls, so no request or serializer was executed.",
+      "The production logging level, sink, retention, and less-trusted reader permissions are not source-visible."
+    ],
+    "validation_plan": {
+      "local": "In an approved bounded sandbox, send one isolated local request carrying Authorization: Bearer *** capture one completion log in scratch, and verify whether the marker survives. Do not use a real token. Repeat after adding header redaction and require marker absence.",
+      "deployment": "Have the owner inspect the configured log sink and reader roles to determine whether request logs cross a credential-access boundary. Do not retrieve or replay real logged tokens."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/db/seed.ts:seed:production-demo-credential",
+    "title": "Demo seed ignores the production prohibition and logs its password",
+    "description": "The explicitly invoked seed command can create a verified active owner with an embedded demo password regardless of NODE_ENV or SEED_DEMO, then write that password to the shared logger. This contradicts the source requirement that demo seeding be disabled in production. It affects the newly created demo organization; production invocation and account state are not established.",
+    "claimed_root_cause": "The exported seed function and direct CLI entrypoint have no environment gate. SEED_DEMO is parsed but unused. The embedded password is both hashed into a usable identity and included in the completion log.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "package.json",
+        "line": 12,
+        "scope": "db:seed script",
+        "description": "The operator command directly invokes src/db/seed.ts against the configured database."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/db/seed.ts",
+        "line": 462,
+        "scope": "seed",
+        "description": "Seed starts without checking NODE_ENV or SEED_DEMO; its existing-email check only skips an already present user."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/db/seed.ts",
+        "line": 477,
+        "scope": "demo identity creation",
+        "description": "An embedded password is hashed and attached to an active verified user; an owner membership is subsequently created."
+      },
+      {
+        "kind": "sink",
+        "file": "src/db/seed.ts",
+        "line": 673,
+        "scope": "seed completion",
+        "description": "The transaction creates the demo owner and logs its plaintext password together with account context."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/db/seed.ts",
+        "line": 488,
+        "description": "The demo user is active and email-verified rather than a disabled fixture."
+      },
+      {
+        "file": "src/db/seed.ts",
+        "line": 521,
+        "description": "The inserted membership grants owner authority over the newly created demo organization."
+      },
+      {
+        "file": "src/db/seed.ts",
+        "line": 676,
+        "description": "The logger payload includes the embedded plaintext password; its literal is intentionally omitted."
+      },
+      {
+        "file": "src/config/env.ts",
+        "line": 14,
+        "description": "SEED_DEMO is declared, but the source scan found no enforcing consumer."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 189,
+        "description": "Normal login verifies the persisted password hash; the seed does not create an inherently non-authenticating record."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1599,
+        "description": "The implementation specification restricts demo seeding to enabled non-production environments."
+      },
+      {
+        "file": "PRD.md",
+        "line": 783,
+        "description": "The product requirements explicitly disable this seed in production."
+      }
+    ],
+    "blockers": [
+      "No complete approved sandbox permits executing seed or login against a disposable local database.",
+      "Production seed invocation, database overlays, demo-account existence, password rotation, and log-reader permissions are not observed.",
+      "The normal application startup does not automatically call seed, so production activation must not be assumed."
+    ],
+    "validation_plan": {
+      "local": "In an approved sandbox with a disposable local database and dummy fixture credentials, exercise the seed entrypoint under NODE_ENV=production and SEED_DEMO=false. Require rejection before any insert or credential log; verify the current behavior only inside that fixture. Also verify disabled seeding outside production and absence of plaintext password fields.",
+      "deployment": "Have the owner inspect deployment/bootstrap command history and demo-account state without disclosing credential values, and remove or rotate any production demo identity if it exists."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/modules/ai/ai.routes.ts:derived-data-role-authorization",
+    "title": "Authenticated operational staff can reach role-restricted financial derived-data endpoints",
+    "description": "PRD denies AI to non-manager operational staff and reports/dashboard to barista/kitchen/helper. Authenticated barista can reach AI context financial aggregate path without role decisions; no cross-tenant or model exploit is asserted.",
+    "claimed_root_cause": "AI, dashboard and report handlers treat organization authentication as sufficient permission and do not evaluate the explicit staff-role matrix.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/ai/ai.routes.ts",
+        "line": 51,
+        "scope": "GET /ai/context",
+        "description": "Authenticated handler calls aggregate service without role gate."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 10,
+        "scope": "getAggregatedContext",
+        "description": "Passes organization and outlet, not role authorization, to repository."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/ai/ai.routes.ts",
+        "line": 59,
+        "scope": "context response",
+        "description": "Full business context returned directly as JSON."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 585,
+        "description": "Permission matrix defines deny and restricts AI/report/dashboard roles in rows 603-606."
+      },
+      {
+        "file": "src/modules/ai/ai.repo.ts",
+        "line": 97,
+        "description": "Aggregate result contains costs, profits and expense categories."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.routes.ts",
+        "line": 7,
+        "description": "Router uses authenticate only."
+      },
+      {
+        "file": "src/modules/reports/reports.routes.ts",
+        "line": 12,
+        "description": "Router uses authenticate only."
+      }
+    ],
+    "blockers": [
+      "No approved complete sandbox; real dummy-role HTTP and DB disclosure not observed."
+    ],
+    "validation_plan": {
+      "local": "In an approved offline bounded sandbox seed owner and barista members plus one dummy financial metric. Exercise /ai/context with RAG disabled and stop at minimal returned aggregate. Verify PRD denials and owner/manager positive controls across AI/dashboard/report routers and both API aliases."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "staff/createStaff/missing-plan-allocation-enforcement",
+    "title": "Staff creation does not enforce trial, Starter or Growth allocation",
+    "description": "An authenticated organization owner or admin can submit ordinary valid staff creations beyond the PRD allocation: a sixth active staff member on trial/Starter or a twenty-sixth on Growth. The source path persists each record without consulting plan or current allocation. The affected boundary is the operator's paid service entitlement, not another tenant's data. Billing also describes Growth as unlimited through staffLimit=null. Sequential creation suffices; concurrency is not required. Each request creates one persistent row, so this is an entitlement bypass hypothesis, not demonstrated resource amplification or shared-service denial of service. Deletion retains rows; no runtime recovery or automatic quota reconciliation is established.",
+    "claimed_root_cause": "The production staff admission path lacks a server-side staff-allocation policy and any count/reservation. Subscription information loaded during authentication is unused by createStaff; staffRepo.create performs an unconditional insert. Billing has a separate incomplete limit expression that omits Growth's twenty-five allowance. Schema and migrations contain no equivalent database enforcement.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/app.ts",
+        "line": 84,
+        "scope": "staff router mounts",
+        "description": "The shared router exposes /staff under /api/v1 and /api at lines 91-94."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.routes.ts",
+        "line": 61,
+        "scope": "POST /staff",
+        "description": "Authenticated owner/admin requests are parsed with createStaffSchema and passed to createStaff without a quota middleware."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.schemas.ts",
+        "line": 3,
+        "scope": "createStaffSchema",
+        "description": "A bounded name, enumerated staff role and employment type, optional contact fields, nonnegative salaries and optional outlet UUID form an ordinary accepted input; no cardinality policy is applied."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/staff/staff.service.ts",
+        "line": 21,
+        "scope": "createStaff",
+        "description": "Resolves a target outlet and maps employee fields, then calls staffRepo.create without reading ctx.planCode or current staff allocation."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 115,
+        "scope": "staffRepo.create",
+        "description": "Inserts a new staff row with organizationId and returns it without count, lock, quota reservation or subscription condition."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 632,
+        "description": "The feature matrix limits trial/Starter staff to five and Growth staff to twenty-five; Pro is unlimited."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 50,
+        "description": "Loads the organization's subscription and publishes planCode/planStatus at lines 80-81; the staff create service does not use these values."
+      },
+      {
+        "file": "src/middleware/authorize.ts",
+        "line": 10,
+        "description": "The strongest route authorization control restricts organization role but does not enforce allocation."
+      },
+      {
+        "file": "src/modules/billing/billing.service.ts",
+        "line": 31,
+        "description": "Advertises staffLimit=5 for trial/Starter and null otherwise, incorrectly omitting Growth's twenty-five cap; this metadata is not an admission control."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 26,
+        "description": "New staff default active; the only declared table index is the nonunique organization/outlet index at line 32, not a quota constraint."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 107,
+        "description": "Subscription schema contains plan and outlet limit but no staff allocation counter."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 442,
+        "description": "Staff DDL contains ordinary columns; foreign keys at lines 873-885 and the index at 1020 do not enforce cardinality. Migration search found no quota trigger/function/policy; subsequent migrations add payroll/inventory constraints and expense fields, not staff admission enforcement."
+      },
+      {
+        "file": "src/modules/staff/staff.repo.ts",
+        "line": 139,
+        "description": "Deletion retains staff with isActive=false and deletedAt set. Listing/counting at lines 14-43 do not exclude retained rows. This does not bypass an existing quota because no quota check exists."
+      },
+      {
+        "file": "src/modules/staff/staff.service.ts",
+        "line": 43,
+        "description": "PATCH maps staff fields and outlet only, not organization, active status or deletedAt; no exposed reactivation path creates a separate quota variant."
+      }
+    ],
+    "blockers": [
+      "Source-only assignment provides no approved sandbox with network isolation, empty allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk/time limits. No route or PostgreSQL fixture was executed.",
+      "Deployed database-only triggers or upstream business admission controls are not observable from this repository; their presence or absence must not be assumed."
+    ],
+    "validation_plan": {
+      "local": "In an approved isolated sandbox with dummy PostgreSQL and no external network, provision one valid owner, organization and its own outlet. Submit minimal valid staff bodies such as {fullName:'Quota fixture',role:'cashier'} with that outlet as active context. Starting at five active rows on trial and Starter, test one sixth creation; starting at twenty-five on Growth, test one twenty-sixth. Record HTTP status and persisted active-row count. At four/twenty-four, release exactly two valid create requests together to test atomic admission; do not perform a load test. Compare GET /billing/subscription with the PRD for all plans. Separately delete one dummy staff member, inspect retained row flags and list totals, and test a replacement under an owner-agreed active-versus-total counting policy. No reactivation test is applicable to the current PATCH schema. An eventual fix should centralize plan limits and serialize allocation with insert/deactivation under the same organization-level transaction boundary; verify one-at-limit rejection and exactly one concurrent admission.",
+      "deployment": "The owner should inspect deployed PostgreSQL staff triggers/constraints and ingress admission policy without sending test traffic to a live service. Determine whether any independently enforced staff cap blocks the source path, and document whether inactive/deleted staff consume allocation and how existing over-limit tenants or plan downgrades are handled. No shared-service outage claim is made."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "src/middleware/authorize.ts:operational-staffrole-policy-omitted",
+    "title": "Operational routes admit staff roles explicitly denied by the permission matrix",
+    "description": "An authenticated organization staff member with a correctly linked cashier, barista, cook or helper role can reach operational actions denied by PRD permissions within their legitimately assigned outlet. Cashiers and other non-managers can adjust inventory and create/receive transfers; cashier/helper can create pending opnames; cashiers can create expenses despite read-only policy, while barista/cook/helper can read and create expenses despite deny policy; barista/cook/helper can create paid sales through either API facade and open/close cash shifts. These are same-tenant role-boundary violations, not cross-outlet or cashier-ownership claims. All variants share absent action-level staff-role enforcement and are consolidated here.",
+    "claimed_root_cause": "authenticate loads staffRole into RequestContext, but authorize accepts only organization roles and operational routes either allow all three organization roles or omit authorize entirely. Services and repository sinks enforce state, stock, tenant and outlet prerequisites without enforcing the PRD staff-role action policy.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/app.ts",
+        "line": 77,
+        "scope": "operational router mounts",
+        "description": "Inventory, sales, expenses, transfers, opnames, shifts and POS routers are mounted under both /api/v1 and /api; no parent staff-role middleware intervenes."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authenticate.ts",
+        "line": 66,
+        "scope": "live staff identity",
+        "description": "A valid session and organization membership produce ctx.orgRole=staff and the actual linked staffRole. Use an outlet genuinely assigned to this staff member."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authorize.ts",
+        "line": 10,
+        "scope": "organization-only authorization",
+        "description": "The gate compares only orgRole. requireOutlet checks presence, requirePlan checks plan/status, and idempotency checks request replay; none checks staffRole."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/inventory/inventory.routes.ts",
+        "line": 39,
+        "scope": "adjustment IN/OUT",
+        "description": "POST /inventory/adjustments admits staff, parses a positive quantity, and calls createAdjustment. With same-tenant item/default warehouse, IN reaches service lines 140/150 and OUT reaches 98/108 to update balance and append movements."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/transfers/transfers.routes.ts",
+        "line": 37,
+        "scope": "transfer create/receive/read",
+        "description": "POST /transfers and /:id/receive admit staff on Growth+. createTransfer validates both warehouses against the organization then deducts stock and inserts transfer/lines; receiveTransfer loads a tenant-bound in_transit transfer then adds destination stock and marks completed. GET list/detail have authentication and plan but no role gate, reaching transfers.repo list select at 19 and detail select at 43."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 86,
+        "scope": "transfer stock and document sinks",
+        "description": "createTransfer calls upsertBalance/createMovement at 86/97 and inserts stockTransfers/stockTransferLines at 124/141. receiveTransfer calls upsertBalance/createMovement at 187/198 and updates completed status at 215. Use two warehouses in the caller's assigned outlet and sufficient stock; no outlet bypass is necessary."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.routes.ts",
+        "line": 32,
+        "scope": "opname create versus decision",
+        "description": "POST /opnames admits all staff, including cashier/helper denied creation, and calls createOpname. Approve/reject separately require owner/admin, so this variant establishes unauthorized pending creation, not unauthorized approval or stock application."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 44,
+        "scope": "pending opname sink",
+        "description": "createOpname inserts a stockOpnames row with pending_review status, caller actorUserId and physical/system quantities without checking staffRole."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/expenses/expenses.routes.ts",
+        "line": 56,
+        "scope": "expense creation and primary reads",
+        "description": "POST /expenses admits all staff and calls createExpense then expensesRepo.create. GET /expenses and /expenses/:id have no role authorization and reach tenant-bound primary expense reads through listExpenses/getExpenseById. Summary/derived-data effects are not claimed."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/expenses/expenses.repo.ts",
+        "line": 56,
+        "scope": "expense insert and read sinks",
+        "description": "create inserts caller-parsed fields with trusted tenant/outlet at 57-64. List returns rows at 35-45 with tenant/outlet filters; detail returns tenant-bound row at 48-53. Neither distinguishes cashier read-only from denied barista/cook/helper roles."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "direct paid-sale creation",
+        "description": "POST /sales authenticates, requires outlet and an idempotency UUID, parses createSaleSchema and calls createSale without a staff-role gate."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/pos/pos.routes.ts",
+        "line": 44,
+        "scope": "alternate POS paid-sale creation",
+        "description": "POST /pos/sales also has no role gate; posSaleSchema passes through posService.createPosSale at line 11 to the same salesService.createSale. It is a second action path to the same sink, not independent authorization."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 15,
+        "scope": "unchecked shared sales service",
+        "description": "createSale checks default warehouse, live same-tenant products and sufficient stock but never staffRole; it deducts inventory and appends sale_out at 175/191 or 251/262, inserts paid sales and saleItems at 297/319, and optionally increments shift receipts at 348. A caller-linked staff ID and ordinary catalog price suffice."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 42,
+        "scope": "shift open and both close forms",
+        "description": "POST /shifts/open, /shifts/close and /shifts/:id/close all admit orgRole staff without distinguishing cashier from barista/cook/helper. Service openShift resolves the caller's existing staff record; closeShift accepts an open shift and computes reconciliation. Test only the caller-linked shift, not another cashier's."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 76,
+        "scope": "cash shift state",
+        "description": "openShift reaches the cashShifts INSERT at 76; both close forms reach UPDATE at 97 setting actual cash, difference, status and closedAt. No staffRole check occurs before these persistence operations."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 593,
+        "description": "Adjustment and transfer deny non-manager staff; opname creation denies cashier/helper and approval permits owner/manager; POS sale denies barista/kitchen/helper; expense permits cashier read only and denies other operational staff."
+      },
+      {
+        "file": "PRD.md",
+        "line": 602,
+        "description": "Shift open/close permits owner, manager and cashier's own shift, and denies barista/kitchen/helper."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 76,
+        "description": "The authenticated context carries live linked staffRole, so a central role decision can be made without trusting body claims."
+      },
+      {
+        "file": "src/middleware/authorize.ts",
+        "line": 4,
+        "description": "Authorization accepts organization role labels only and never inspects staffRole."
+      },
+      {
+        "file": "src/modules/opnames/opnames.routes.ts",
+        "line": 47,
+        "description": "Strongest sibling control: approve/reject require owner/admin and therefore stop a staff principal; unauthorized creation does not automatically imply unauthorized approval."
+      },
+      {
+        "file": "src/modules/transfers/transfers.routes.ts",
+        "line": 57,
+        "description": "Transfer cancellation is owner/admin-only, unlike staff-admitting creation/receipt; no cancellation privilege gain is claimed."
+      },
+      {
+        "file": "src/modules/expenses/expenses.routes.ts",
+        "line": 66,
+        "description": "Expense patch/delete are owner/admin-only. The surviving mutation is staff expense creation, not arbitrary staff update/delete."
+      },
+      {
+        "file": "src/modules/pos/pos.service.ts",
+        "line": 11,
+        "description": "POS forwards directly to createSale; an HTTP-only fix on /sales would leave the alternate sale facade unchecked."
+      }
+    ],
+    "blockers": [
+      "No parent-approved OS-enforced sandbox provides disabled external networking, empty allowlisted environment, read-only target/toolchain, scratch-only writes and bounded aggregate CPU/memory/PID/disk/file/time limits. No target code, test or database fixture was executed; source-visible effects remain unobserved locally.",
+      "An execution helper requested approval before performing any reads; no approval-dependent code was run. Inspection proceeded through read-only file/search tools."
+    ],
+    "validation_plan": {
+      "local": "Once the parent supplies the required sandbox, use only dummy organization A with an active Growth subscription, outlet OA genuinely assigned to each principal, two OA warehouses, one valid stocked catalog item, and live sessions for orgRole staff linked to cashier, helper, barista, head_barista, cook and store_manager staff records. Use fresh UUID idempotency keys on transfer/sale requests. For cashier, submit ordinary adjustment IN/OUT, transfer create/receive, pending opname creation and expense creation; assert policy-expected 403 and read back minimum affected balances/movements/documents if unexpectedly accepted. For helper repeat denied actions and primary expense list/detail; for barista/cook repeat denied adjustment/transfer/expense plus paid sale through BOTH /sales and /pos/sales, using catalog price and no cashierStaffId override. Exercise shift open on the caller's own linked staff record, then each close form on separately prepared caller-linked open shifts; assert denied roles cannot insert or reconcile shifts. Assert owner/manager allowed cases, cashier sale and own-shift cases, and barista/cook opname creation still work. Assert ordinary staff cannot approve/reject opnames, cancel transfers or patch/delete expenses. Verify effects using exact dummy rows and stop at the minimum result. Do not switch outlets, select foreign references, impersonate another cashier, test races, or exercise derived-data routes. No promotion is currently authorized, so the parent must predeclare a bounded evidence file and safe promotion before treating execution as retained proof."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "dashboard/derived-analytics/missing-plan-projection",
+    "title": "Starter owners receive Growth-only derived analytics through dashboard and AI context",
+    "description": "An authenticated owner of an active Starter organization is authorized for their own business data but not every paid feature. GET /api/v1/dashboard returns SKU margin reporting, expense-inclusive nett KPIs and waste percentage without evaluating the subscription. Its monthly chart also includes opex. GET /api/v1/ai/context is an alternate direct delivery of expense-inclusive nett profit; POST /api/v1/ai/advisor builds the same context and, with RAG unset, returns it as forwardPayload. The /api aliases share these routes. This is paid-feature parity failure, not a staff-role bypass or access to another tenant. Expense-inclusive and waste numerical differentiation requires nonzero metrics; supplier-master access is a separate candidate.",
+    "claimed_root_cause": "Derived analytics are assembled with organization/outlet identifiers but without a plan-aware feature projection. Billing's Growth entitlement is informational only, while dashboard and AI context compute and return premium outputs unconditionally.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/dashboard/dashboard.routes.ts",
+        "line": 9,
+        "scope": "GET /dashboard",
+        "description": "Authenticated Starter owner can request the dashboard; no Growth gate is installed."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authenticate.ts",
+        "line": 71,
+        "scope": "request context",
+        "description": "Live planCode is available in request context, but authentication itself admits Starter."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/dashboard/dashboard.routes.ts",
+        "line": 14,
+        "scope": "dashboard service invocation",
+        "description": "Only organizationId, outletId and query are passed, discarding the available plan context."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/dashboard/dashboard.repo.ts",
+        "line": 103,
+        "scope": "getMenuPerformance",
+        "description": "Paid-sale lines yield per-menu price, COGS and gross-profit aggregates, without a plan predicate."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/dashboard/dashboard.service.ts",
+        "line": 80,
+        "scope": "dashboard response",
+        "description": "Returns nettProfitIdr, nettMarginPct, wastePct, monthly expense-inclusive profit and menuPerformance with marginPct for every plan."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 634,
+        "description": "Supplier master and SKU margin report are Growth features; Starter gets basic supplier string."
+      },
+      {
+        "file": "PRD.md",
+        "line": 635,
+        "description": "Starter nett KPI is revenue minus COGS; operating-expense-inclusive profit starts at Growth."
+      },
+      {
+        "file": "PRD.md",
+        "line": 640,
+        "description": "Starter basic COGS explicitly excludes waste percentage and ROP."
+      },
+      {
+        "file": "src/modules/billing/billing.service.ts",
+        "line": 32,
+        "description": "nettProfitIncludesOpex is false below Growth, establishing a source-visible sibling entitlement."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.service.ts",
+        "line": 31,
+        "description": "Unconditionally subtracts opex and calculates waste percentage; lines 66-75 calculate per-menu margin and lines 87-100 expose the results."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.repo.ts",
+        "line": 55,
+        "description": "Monthly chart profit subtracts opex without knowing the plan, an additional copy requiring the same entitlement projection."
+      },
+      {
+        "file": "src/modules/ai/ai.routes.ts",
+        "line": 51,
+        "description": "Direct /context response requires authentication but passes no plan to getAggregatedContext and returns the result."
+      },
+      {
+        "file": "src/modules/ai/ai.repo.ts",
+        "line": 95,
+        "description": "Computes grossProfit minus opex and returns nettProfitIdr and nettMarginPct at lines 105-106 independent of plan."
+      },
+      {
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 19,
+        "description": "Legacy advisor builds the unfiltered business context and returns it as forwardPayload at lines 39-43 if RAG is unset; no downstream RAG assumption is needed for /context."
+      },
+      {
+        "file": "src/modules/reports/reports.service.ts",
+        "line": 139,
+        "description": "Strongest relevant sibling control: planAllowsRop(ctx.planCode) suppresses Starter ROP, with no calculated reorder quantity when ROP is null."
+      },
+      {
+        "file": "src/modules/wastes/wastes.routes.ts",
+        "line": 12,
+        "description": "Primary waste workflow independently enforces requirePlan('growth'); dashboard does not inherit that gate."
+      },
+      {
+        "file": "src/db/schema/ops.ts",
+        "line": 65,
+        "description": "Opex and waste daily-metric fields default to zero. Reviewed expense creation does not populate them, so nonzero numeric impact is a validation dependency rather than an assumed fact."
+      }
+    ],
+    "blockers": [
+      "No approved sandbox with network isolation, allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk/time limits is available; target execution is prohibited.",
+      "No local HTTP/service result demonstrates Starter versus Growth output. Nonzero daily_metrics opex/waste producer or downgraded populated history is not established; a zero-only deployment would mask these two numerical effects, though the margin-report path uses paid sale lines directly."
+    ],
+    "validation_plan": {
+      "local": "Under a parent-approved bounded sandbox, use dummy Starter and Growth owner sessions and fixture paid sale lines with distinct price/COGS. Seed explicit dummy daily metrics with nonzero revenue, COGS, opex and waste to isolate projection behavior. Compare dashboard KPIs, chart, menuPerformance, /ai/context and unset-RAG /ai/advisor. Starter must retain revenue/COGS and gross-profit basics but not expense-inclusive nett, waste percentage or SKU margin-report outputs; Growth retains them. Assert /reports/stock has rop=null and reorderQty=0 for Starter, not a blanket denial of basic stock reporting. Mock or disable all external RAG calls.",
+      "deployment": "Owner review only: identify the actual daily_metrics aggregation producer and whether nonzero opex/waste can exist for a Starter tenant, including downgrade behavior. Do not infer such a producer or billing transition from the response schema alone. No deployed probing is requested."
+    }
+  },
+  {
+    "proposed_verdict": "needs_validation",
+    "fingerprint": "suppliers/master/missing-growth-entitlement",
+    "title": "Starter owner can use Growth supplier-master CRUD",
+    "description": "An active Starter organization owner can invoke supplier-master creation, retrieval, update and soft deletion despite PRD restricting Starter to a basic supplier string. The owner is deliberately selected so the role check succeeds legitimately; the missing boundary is paid entitlement, not role or tenant authorization. Separate supplier records and contact fields are a concrete capability beyond storing supplierName on an ingredient.",
+    "claimed_root_cause": "Supplier routes enforce authentication and mutation roles but omit the independent Growth plan gate; services and repositories take only organizationId and cannot enforce the missing entitlement.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/suppliers/suppliers.routes.ts",
+        "line": 29,
+        "scope": "POST /suppliers",
+        "description": "Authenticated Starter owner passes authorize('owner', 'admin') and submits a named dummy supplier."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/suppliers/suppliers.routes.ts",
+        "line": 31,
+        "scope": "supplier creation dispatch",
+        "description": "Validated supplier body and organizationId reach createSupplier without checking planCode."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/suppliers/suppliers.service.ts",
+        "line": 15,
+        "scope": "createSupplier",
+        "description": "Service delegates directly to repository and receives no subscription context."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/suppliers/suppliers.repo.ts",
+        "line": 31,
+        "scope": "persistent supplier master insert",
+        "description": "Inserts tenant-bound supplier master with name and optional contact/notes fields, returns the record, and the route sends HTTP 201."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 634,
+        "description": "Starter supplier support is basic string; Growth and above receive supplier master."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 74,
+        "description": "Supplier router is mounted without an outer entitlement middleware, under both /api/v1 and /api."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 80,
+        "description": "Live Starter plan is loaded into context; authentication does not reject it."
+      },
+      {
+        "file": "src/middleware/authorize.ts",
+        "line": 10,
+        "description": "Role authorization checks only allowedRoles; owner access here is legitimate but does not imply Growth entitlement."
+      },
+      {
+        "file": "src/middleware/requirePlan.ts",
+        "line": 22,
+        "description": "Existing independent plan guard can reject below-Growth principals, but supplier routes do not invoke it."
+      },
+      {
+        "file": "src/modules/suppliers/suppliers.routes.ts",
+        "line": 8,
+        "description": "Router uses only authenticate globally; GET routes are available and POST/PATCH/DELETE add roles but not a plan gate."
+      },
+      {
+        "file": "src/modules/suppliers/suppliers.repo.ts",
+        "line": 33,
+        "description": "Creates separate master records with organizationId, name, phone, email and notes. Tenant filters on sibling CRUD prevent cross-tenant access but do not prevent Starter use."
+      }
+    ],
+    "blockers": [
+      "No approved bounded sandbox is available, so persistent creation and subsequent readback with a dummy Starter owner have not been executed."
+    ],
+    "validation_plan": {
+      "local": "In a parent-approved isolated fixture with low resource limits, create dummy active Starter and Growth owner contexts. POST a supplier with name 'Fixture Supplier' and non-sensitive phone/email/notes, then read back that exact dummy ID. Current source predicts successful Starter creation; intended behavior is PLAN_REQUIRED without persistence for Starter and permitted tenant-scoped CRUD for Growth. Verify PATCH/DELETE and list/detail use the same entitlement policy while ordinary ingredient supplierName strings remain supported. No real credentials, production data or external calls."
+    }
+  }
+]

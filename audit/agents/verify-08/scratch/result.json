@@ -1,0 +1,113 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "opnames/decision/pretransaction-status-check",
+    "title": "Concurrent opname decisions may repeat a variance or overwrite the stock decision",
+    "description": "Source inspection supports, but does not dynamically demonstrate, a same-organization inventory-integrity race. An authenticated owner/admin on Growth or a higher admitted plan can issue overlapping decisions for one pending opname. Two approvals that both read pending_review before either decision commits may each apply its stored variance to an existing balance and insert an opname movement. An approval racing rejection may instead leave the header rejected while the approval's balance and movement changes remain committed. This is not a cross-tenant or staff-role bypass. Sequential duplicate decisions are rejected, and each individual approval atomically commits its balance, movement and approved header; the suspected defect is missing atomic eligibility across competing decisions, not partial approval commits.",
+    "claimed_root_cause": "Both decision methods perform the organization-scoped pending_review read/check outside the approval transaction. Neither rereads or locks the opname header inside a shared decision transaction, and both terminal updates filter only by id. Balance FOR UPDATE locks serialize arithmetic for an existing balance, but do not invalidate a competing caller's previously accepted opname state. Source-visible movement reference indexes are nonunique and do not independently enforce one opname adjustment.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/opnames/opnames.routes.ts",
+        "line": 47,
+        "scope": "POST /api/v1/opnames/:id/approve; sibling reject route at line 57",
+        "description": "Caller-controlled opname ids reach approveOpname and rejectOpname after authentication, minimum Growth plan gating and owner/admin authorization; the same router is also mounted under /api."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.repo.ts",
+        "line": 49,
+        "scope": "opnamesRepo.getById",
+        "description": "The plain SELECT filters id and organizationId, preventing arbitrary other-tenant document selection, but does not acquire a decision lock."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 65,
+        "scope": "approveOpname eligibility and transaction boundary",
+        "description": "Lines 66-71 read/check pending_review before db.transaction begins at line 73. The transaction consumes the captured variance without rechecking header eligibility."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 85,
+        "scope": "approval balance, ledger and terminal-header effects",
+        "description": "Approval adds stored variance to the locked current balance, upserts that balance and inserts a movement at lines 87-111, then sets approved at lines 114-122 using only the opname id. These effects are atomic within each approval, but no conditional pending-state claim arbitrates competing approvals."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 136,
+        "scope": "rejectOpname terminal update",
+        "description": "After its separate pending check at lines 129-134, rejection writes rejected by id at lines 136-144 without a pending_review predicate or transaction coordinating with approval. A stale rejection can therefore potentially overwrite an approved header without reversing its stock effects."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1655,
+        "description": "The required opname test states that pending must not change stock and approval changes stock; the service's pending-only checks further establish that terminal decisions are not intended to be replayed."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Authentication checks an unrevoked session, enabled user and live organization membership before constructing the organization/role/plan context; this restricts the proposed actor to a valid organization principal."
+      },
+      {
+        "file": "src/middleware/requirePlan.ts",
+        "line": 19,
+        "description": "Plan-level comparison and expired-plan rejection apply before decision routing. The candidate requires an admitted Growth-or-higher plan, not anonymous access."
+      },
+      {
+        "file": "src/middleware/authorize.ts",
+        "line": 10,
+        "description": "The route's allowed-role list is enforced against the authenticated organization role, so ordinary staff cannot directly perform these terminal decisions."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 82,
+        "description": "The opname router is mounted on /opnames and exposed through both /api/v1 and /api at lines 91-94; no application-wide decision mutex or idempotency gate is installed on this path."
+      },
+      {
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 99,
+        "description": "findBalanceForUpdate uses SELECT FOR UPDATE on the warehouse/item balance at line 115, and upsertBalance repeats that lookup at line 133. These existing-row locks protect quantity arithmetic, not opname lifecycle eligibility."
+      },
+      {
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 193,
+        "description": "createMovement inserts a fresh movement with the supplied refType/refId; it performs no prior-opname-movement lookup or deduplication."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 29,
+        "description": "Nonnegative on-hand/reserved and reserved-not-above-on-hand checks constrain negative-variance schedules. An existing balance and small positive variance avoid those constraints; no negative-stock result is claimed."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 67,
+        "description": "The stock-movement reference index is nonunique; it does not enforce one movement for an opname reference."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 144,
+        "description": "The opname table's declared secondary index is organization/time, not a terminal-transition or single-ledger-effect constraint."
+      },
+      {
+        "file": "src/db/client.ts",
+        "line": 6,
+        "description": "The source creates a postgres-js client and Drizzle wrapper without explicitly configuring a transaction isolation level; actual PostgreSQL execution and server-side overrides were not observed."
+      }
+    ],
+    "blockers": [
+      "Target-controlled execution is prohibited: a combined OS-enforced sandbox with scratch-only writes and aggregate process-tree CPU, memory, PID and disk limits has not been established. No tests, imports, harnesses or database operations were run.",
+      "No real-PostgreSQL overlapping-decision result has been observed. Effective isolation and any owner-installed database controls, plus duplicate movement/balance effects or a rejected final header after committed approval effects, remain unverified.",
+      "The artifact-promotion allowlist is empty with zero byte limits, so no target-produced execution evidence can be retained under the current assignment."
+    ],
+    "validation_plan": {
+      "local": "Only after the parent supplies the complete approved offline sandbox, an isolated disposable PostgreSQL instance and bounded artifact promotion, seed dummy organization A, an admitted owner/admin, warehouse/item, an existing balance and one pending opname with a small positive variance. Use the actual decision service and real database with two independent requests/connections. Pause both calls after their organization-scoped pending reads, release both approvals, then inspect the exact header, balance and movements for that opname. Separately overlap approval/rejection and control both write orders, including rejection after approval commits. Expect at most one successful terminal transition, one variance effect and one movement, with stock unchanged when rejection wins. Compare sequential duplicates, zero variance and negative-variance constraint failures as controls without broadening the claimed impact. Source fix to validate: lock and recheck the organization-scoped header inside a transaction shared by both decision methods, or atomically claim pending_review with a checked conditional update inside the same transaction as approval effects; preserve rollback of header, balance and movement together. Add deterministic real-database concurrency regressions, not only mocked repository tests.",
+      "deployment": "No deployed probe is needed or authorized. The owner should supply sanitized configuration or DDL evidence of effective PostgreSQL isolation and any extra decision triggers/constraints or request serialization. If those controls are material, reproduce their configuration only in the disposable local fixture. Do not infer production duplicate adjustments from this source-only review."
+    }
+  }
+}

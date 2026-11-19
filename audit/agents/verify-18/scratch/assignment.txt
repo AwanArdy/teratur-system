@@ -1,0 +1,198 @@
+You did not write this candidate. Try to refute it from repository source and bounded
+local evidence. Do not contact deployed endpoints or external/shared services. Run
+target-controlled code only inside the approved OS-enforced sandbox: no external
+network, empty allowlisted environment, read-only target and tools, scratch-only
+writes, and explicit low resource and wall-clock limits. If any control is unavailable,
+do not execute; retain the exact missing capability as a needs_validation blocker.
+Treat every scratch entry as target-controlled after execution. After the sandbox and
+all its processes terminate, only trusted parent-side code may promote a predeclared
+scratch-relative file, following the promotion procedure block included verbatim in
+this prompt. You and target code never write retained artifacts. If promotion is
+unavailable or fails, do not use that file as evidence.
+
+1. Verify every trace and evidence file, positive line number, scope, and description.
+   Confirm the first entry is a real lower-trust entrypoint and the last is the
+   claimed sink or boundary effect.
+2. Reconstruct the strongest source-visible validation, identity, authorization,
+   normalization, lifecycle, framework, and containment controls on the path.
+   Where the architecture summary names a comparable baseline, note whether it
+   shares the pattern — as calibration, never as grounds to dismiss.
+3. For a proposed confirmed candidate, independently reproduce the minimum observed
+   result when possible. Verify inputs, interface shape, conditions, and affected
+   dummy principal/resource. Do not infer a stronger result or continue after it.
+4. Verify that likelihood, impact, confidence, and the proposed source fix match only
+   what the evidence establishes.
+5. For a proposed needs_validation candidate, decide whether the blocker is genuinely
+   outside source/local observation. If source refutes the trace, reject it. If the
+   missing fact remains decisive, keep needs_validation and make the local and
+   owner-observed plans exact and non-destructive.
+6. Preserve the fingerprint for the same source-derived root cause across every state.
+
+Return exactly one JSON object and no surrounding prose:
+{"decision": "confirmed|needs_validation|rejected", "record": { ... }}
+where record exactly matches the decision's verdict branch of the schema included
+in this prompt. A corrected record replaces the hunter's wording.
+```
+
+Copy this promotion procedure verbatim into every candidate-verifier prompt:
+
+```text
+Artifact promotion procedure (trusted parent-side code only):
+Reference only for you: the parent performs these steps; you never perform them.
+
+Before execution, the parent opens and retains trusted, non-inheritable directory
+descriptors for the agent's scratch/ and artifacts/ roots, and records an allowlist
+of expected scratch-relative artifact files plus explicit per-file and cumulative
+byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox
+and all its processes terminate, trusted parent-side code promotes each allowlisted
+file separately:
+
+1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or
+   symlinked components.
+2. Walk each parent component from the retained scratch-root descriptor with
+   no-follow directory-relative operations; never reopen by path.
+3. Open the leaf no-follow and nonblocking.
+4. Verify with `fstat` that it is a regular file with link count exactly one and
+   within the recorded per-file and cumulative byte limits.
+5. Enforce those limits again while reading from that descriptor.
+6. Copy exactly the verified size, repeat `fstat`, and reject a changed identity,
+   type, link count, or size.
+7. For the destination, walk every parent component from the retained
+   artifacts-root descriptor with no-follow directory-relative operations; require
+   each existing component to be a real directory, and create any missing directory
+   exclusively before reopening and verifying it no-follow.
+8. Create the leaf exclusively without following links, verify that the opened
+   destination is a regular file with link count exactly one, and copy from the
+   verified source descriptor without reopening either path.
+9. Use equivalent race-safe APIs on non-POSIX systems.
+10. Never recursively copy or glob scratch, extract an archive into artifacts, or
+    open or promote a symlink, FIFO, socket, device, directory, hard-linked file,
+    changing file, or file that exceeds its bound.
+11. If any check is unavailable, cannot be enforced, or fails, discard the scratch
+    entry; if it is decisive evidence, retain `needs_validation` with the exact
+    promotion blocker.
+```
+
+
+ARCHITECTURE
+# Architecture and audit scope
+
+TERATUR-ID backend is a multi-tenant Indonesian F&B operations API. Node/TypeScript Express 5 and Drizzle/postgres-js handle identities, organizations, outlets, catalogs, inventory, POS/sales, expenses, workforce/payroll, reports and optional AI advisor forwarding. Both /api/v1 and /api mount the same router (src/app.ts:67-94).
+
+Principals are anonymous callers, organization owner/admin/staff, optional linked staff records, backend DB service, and an optional external RAG service. Protected resources include identity/session capabilities, other organizations' data, outlet operations, employment/payroll information, financial/inventory integrity and paid service entitlements. Authentication reloads live sessions, users and memberships (src/middleware/authenticate.ts:9-82). Organization roles and plans have separate middleware. Outlet context currently loads all organization outlets; PRD outlet assignment policy needs careful comparison rather than assumed correctness.
+
+Public identity flows include onboarding/OTP, login, refresh, reset and logout. Entry inputs include JSON, path/query selectors, Bearer and outlet/idempotency headers. Sensitive flows include foreign-object references into catalog/staff/warehouse resources; concurrent sale/cancel, transfer/receipt, stock approval and shift close; report/AI copies and exports; subscription selection; and credential logging. Role policy must be established from source requirements, not assumed from missing middleware.
+
+Source deployment is a PostgreSQL-only Compose service plus documented build/start. Runtime configuration controls signing material, DB, CORS and optional RAG forwarding. Production ingress/TLS, DB policies, billing integration, log readership and downstream RAG policies are unobserved. Do not probe any deployed service. No meaningful comparable baseline was established.
+
+Read-only reconnaissance covered all modules, schemas, tests and manifests. npm run build and npm test require existing dependencies; tests mock important boundaries and do not prove actual DB isolation. No target-controlled execution is approved: OS primitives exist, but combined scratch-only writes and aggregate process-tree CPU/memory/PID/disk limits are not established. Do not run builds, tests, harnesses, application imports or target validators outside the required sandbox. Source-grounded candidates therefore remain needs_validation unless independently bounded execution becomes possible. Do not install dependencies or read credential files. Do not emit literal embedded credential values.
+
+Full repository source scope includes src, tests, migrations, manifests, docs, tracked generated Drizzle config and the untracked docker-compose.yml. Source revision 01addef3622c31cedce58382572573170505844a on main; untracked Compose makes the reviewed worktree dirty. No prior coverage ledger/findings found in audit or ~/security-audit-skill. Reports are in locally ignored audit/; parent is sole writer of shared artifacts.
+
+Companions: WEB-PROTOCOL-AND-AUTH for HTTP/session/account transitions; DATA-ISOLATION-AND-LIFECYCLE for tenant/object, analytics/export/deletion boundaries; RESOURCE-EXHAUSTION-AND-AVAILABILITY for public hashing and shared DB/RAG work; AI-AND-LLM for retrieval/context/output (no tool execution established); CLOUD-AND-DEPLOYMENT for runtime config and Compose; SUPPLY-CHAIN-AND-RELEASE for local manifests/build inputs. No native memory, browser DOM, local IPC, federated identity, MCP or message-broker boundary is source-established. Do not assert current CVEs without an authoritative available advisory; network dependency audits are outside this run.
+
+CANDIDATE
+{
+  "proposed_verdict": "needs_validation",
+  "fingerprint": "src/app.ts:pino-http:authorization-header-logging",
+  "title": "Default HTTP request logging retains bearer credentials",
+  "description": "Routine request-completion logging is configured to retain request headers without credential redaction. The same Authorization header carries reusable access tokens. A log reader outside the authenticated principal's authority could obtain and replay a still-valid token; the actual log-reader boundary and emitted output require validation.",
+  "claimed_root_cause": "The application enables pino-http's default request serializer while neither its options nor the shared Pino logger redact Authorization. Matching installed dependency source copies req.headers into the logged request binding.",
+  "trace": [
+    {
+      "kind": "entrypoint",
+      "file": "src/app.ts",
+      "line": 38,
+      "scope": "HTTP logging middleware",
+      "description": "Incoming requests enter pino-http before the API routers; no credential-removing serializer is configured."
+    },
+    {
+      "kind": "propagation",
+      "file": "node_modules/pino-http/logger.js",
+      "line": 145,
+      "scope": "loggingMiddleware",
+      "description": "The default middleware binds the request object to the logger used when the response completes."
+    },
+    {
+      "kind": "propagation",
+      "file": "node_modules/pino-std-serializers/lib/req.js",
+      "line": 88,
+      "scope": "reqSerializer",
+      "description": "The serializer copies req.headers, including Authorization, into the serialized request."
+    },
+    {
+      "kind": "sink",
+      "file": "node_modules/pino-http/logger.js",
+      "line": 130,
+      "scope": "successful response logging",
+      "description": "Request completion emits the response through the request-bound logger without application redaction."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "src/app.ts",
+      "line": 39,
+      "description": "pino-http receives the shared logger and custom request-ID properties, but no redaction or safe request serializer."
+    },
+    {
+      "file": "src/lib/logger.ts",
+      "line": 4,
+      "description": "The shared logger configures level and development pretty transport only."
+    },
+    {
+      "file": "src/middleware/authenticate.ts",
+      "line": 10,
+      "description": "Authorization is consumed as the bearer authentication capability; signature, live session, user, and membership checks limit replay to a still-valid credential."
+    },
+    {
+      "file": "DESIGN.md",
+      "line": 1668,
+      "description": "The security requirements prohibit logging tokens."
+    },
+    {
+      "file": "node_modules/pino-std-serializers/lib/req.js",
+      "line": 88,
+      "description": "The inspected serializer source retains all request headers. Its installed version matches package-lock.json."
+    }
+  ],
+  "blockers": [
+    "No approved sandbox provides all required network, environment, scratch-write, aggregate resource, and artifact-promotion controls, so no request or serializer was executed.",
+    "The production logging level, sink, retention, and less-trusted reader permissions are not source-visible."
+  ],
+  "validation_plan": {
+    "local": "In an approved bounded sandbox, send one isolated local request carrying Authorization: Bearer *** capture one completion log in scratch, and verify whether the marker survives. Do not use a real token. Repeat after adding header redaction and require marker absence.",
+    "deployment": "Have the owner inspect the configured log sink and reader roles to determine whether request logs cross a credential-access boundary. Do not retrieve or replay real logged tokens."
+  }
+}
+LINKED UNIT CHECKS
+[{"coverage_id": "package.json::runtime%20deployment%20and%20build%20trust::package.json::ATTACK-CLASSES.md%23Cryptography%20and%20secrets", "local_checks": [{"agent_id": "hunt-config", "reviewed_paths": ["src/app.ts", "src/lib/logger.ts", "src/middleware/authenticate.ts", "package-lock.json", "node_modules/pino-http/logger.js", "node_modules/pino-std-serializers/lib/req.js", "DESIGN.md"], "invariant": "Routine HTTP logging must not disclose reusable authentication credentials.", "method": "source", "result": "src/app.ts:38-44 installs pino-http without a custom request serializer or redaction; src/lib/logger.ts:4-9 supplies no redaction. Installed pino-http 10.5.0 and pino-std-serializers 7.1.0 match their lockfile versions. Their source binds the serialized request to completion logs and copies req.headers, including Authorization. authenticate consumes that same header as the bearer credential. DESIGN.md:1668 prohibits logging tokens. Runtime disclosure and log-reader boundaries remain untested.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/config/env.ts", "src/db/seed.ts", "src/lib/password.ts", "src/modules/auth/auth.routes.ts", "src/modules/auth/auth.service.ts", "package.json", "PRD.md", "DESIGN.md"], "invariant": "Demo credentials must not create an active production identity, and seed completion must not log plaintext passwords.", "method": "source", "result": "package.json:12 invokes seed.ts directly. seed.ts:462-697 contains no production or SEED_DEMO gate, hashes an embedded demo password at line 477, creates an active verified user and owner membership, and logs the password at lines 673-681. The existing-email check skips an existing user rather than overwriting it. The seed creates a new demo organization, not access to arbitrary existing organizations. PRD.md:180,783 and DESIGN.md:1599 require non-production-only seeding. env.SEED_DEMO is declared but has no source consumer. Actual production invocation and resulting account state are not observed.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/lib/password.ts", "src/lib/otp.ts", "src/lib/jwt.ts", "src/config/env.ts"], "invariant": "Security values must use appropriate randomness and verification, and cryptographic failures must not become successful authentication.", "method": "source", "result": "OTP generation uses crypto.randomInt; opaque tokens use randomBytes(32); passwords use Argon2id and verification errors return false. JWT verification uses jose.jwtVerify and returns null on failure, with distinct access/onboarding typ checks. Signing secrets require at least 32 characters and have no runtime literal default. OTP_PEPPER has an embedded default; this alone does not establish disclosure of OTP records or an authentication bypass. No assigned-path ECB, static-IV encryption, nonce reuse, custom MAC verification, or secret-comparison timing failure was established. Detailed session/account-transition review belongs to the auth peer.", "artifact": null}]}, {"coverage_id": "package.json::runtime%20deployment%20and%20build%20trust::package.json::ATTACK-CLASSES.md%23Obvious%20things", "local_checks": [{"agent_id": "hunt-config", "reviewed_paths": ["src/config/env.ts", "src/db/seed.ts", "src/lib/logger.ts", "README.md", "PRD.md", "DESIGN.md", "docker-compose.yml", "drizzle.config.ts", "tests/auth-plan.test.ts"], "invariant": "Obvious checks 1 and 4: identify embedded credentials and distinguish test/demo fixtures from production-capable identities.", "method": "source", "result": "Sensitive-keyword location scanning found the embedded seed password and its plaintext completion-log field, the OTP pepper default, local database defaults/examples, and mocked test credentials. Credential literals are omitted from this result. Seed is the production-capable candidate because its explicit non-production requirement is not enforced. Mock credentials in auth-plan.test.ts do not establish production identities. No embedded runtime JWT secret or API key was established by the source scan. No credential files were read.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/config/env.ts", "src/lib/logger.ts", "src/app.ts", "src/server.ts"], "invariant": "Obvious checks 2 and 3: security TODOs and development switches must not silently bypass controls.", "method": "source", "result": "The src scan found no TODO/FIXME/HACK/XXX comments. NODE_ENV defaults to development and can be set by the process environment; it selects pino-pretty only, not a request-controlled authentication bypass. LOG_LEVEL allows debug/trace, but neither is enabled by request parameters or headers. Credential logging is not confined to development, as recorded separately.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/app.ts", "package.json", "src/server.ts"], "invariant": "Obvious check 5: public health/configuration/management endpoints must not disclose protected state or expose administrative operations.", "method": "source", "result": "Public /health and /healthz return status and timestamp; /api/v1/meta and its /api alias return timezone, currency, API version, and request ID. No src route matching debug/admin/test/status/metrics/env/config was found. Drizzle Studio is an operator CLI script, not an application route. Both API prefixes mount the same router rather than a separate weaker legacy implementation.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": [".gitignore", "README.md"], "invariant": "Obvious checks 6 and 7: discover tracked credential filenames without reading them and inspect local-artifact exclusions.", "method": "source", "result": "git ls-files filename inspection found only .env.example among .env-family files, credentials.json, PEM, and key patterns; its contents were not read. .gitignore covers named .env variants, dependencies, build outputs, logs, exports, uploads, temporary directories, and PostgreSQL volume data. It does not comprehensively exclude arbitrary .env.* suffixes, PEM/key files, or credentials.json. No actual tracked credential file of those types was established.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["package.json", "package-lock.json", "README.md", "tsconfig.json", "drizzle.config.ts", "drizzle.config.js", "drizzle.config.js.map", "drizzle.config.d.ts.map"], "invariant": "Obvious check 8 and supply-chain companions: resolve dependency/build provenance without inventing advisories or an unauthorized publication path.", "method": "source", "result": "Manifest dependencies use caret ranges; lockfileVersion 3 records exact package versions and npm registry resolutions with integrity for every non-root package. The lock has 306 package entries, no non-npm resolved URLs, and install-script packages including Argon2/esbuild. README prescribes npm install, not npm ci. No tracked root resolver override or maintained CI/release workflow was identified. Build is tsc over src and start executes dist/server.js. Generated Drizzle JS differs from TS in configuration loading; its source maps do not embed sourcesContent. No lower-trust dependency writer or release artifact disclosure was established. No npm audit, network advisory lookup, install, build, or CVE assertion was performed.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/app.ts", "src/modules/auth/auth.routes.ts", "src/middleware/authenticate.ts"], "invariant": "Obvious checks 9 through 12: reject executable-input, permissive cross-origin credential, cookie, and redirect claims unsupported by actual source.", "method": "source", "result": "The src scan found no dynamic-execution or redirect sink and no cookie-setting call. Authentication uses non-ambient Authorization bearer tokens; refresh/logout consume JSON tokens. CORS receives env.CORS_ORIGINS.split(',') as an origin list, defaults to a single localhost origin, and does not enable credentials. No literal wildcard/credentialed-wildcard configuration is present in app.ts. Arbitrary production origin policy and browser behavior were not inferred. No ordinary cookie-CSRF claim is supported.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/server.ts", "src/app.ts", "src/db/client.ts", "docker-compose.yml", "README.md"], "invariant": "Obvious check 13 and cloud companions: distinguish plaintext source listeners from proven lower-trust network access.", "method": "source", "result": "The application starts an HTTP listener with no application TLS/HTTPS redirect; README documents localhost HTTP and build/start. PostgreSQL uses DATABASE_URL without an explicit source-enforced TLS policy. Compose defines only PostgreSQL, publishes host port 5435 to container port 5432, contains embedded local database credentials, uses a named data volume, and floats postgres:16-alpine. It specifies no privileged mode, host namespace, runtime socket, or host-path mount. No production ingress, firewall, TLS termination, overlay, workload IAM, admission, or metadata attachment is source-established. Therefore no live public database/API exposure or container escape is claimed.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/middleware/errorHandler.ts", "src/app.ts", "src/lib/logger.ts", "src/modules/auth/auth.service.ts"], "invariant": "Obvious check 14: unexpected production errors must not expose stacks, SQL, or internal paths to API clients.", "method": "source", "result": "Unexpected errors return generic INTERNAL_ERROR text without a stack or SQL; the full error is written to logs. Zod responses expose only issue path/message. HttpError intentionally passes details through. A constructor scan found business details and AI downstream error passthrough, the latter handed off as uncovered rather than silently treated as sanitized. Auth service also logs OTP/reset capabilities without an environment gate; that peer-owned lifecycle sink is explicitly handed off below.", "artifact": null}, {"agent_id": "hunt-config", "reviewed_paths": ["src/db/migrate.ts", "drizzle.config.ts", "drizzle.config.js", "src/db/seed.ts", "package.json", "drizzle/migrations/0000_ambiguous_silver_fox.sql", "drizzle/migrations/0001_magical_rattler.sql", "drizzle/migrations/0002_young_alice.sql", "drizzle/migrations/meta/0000_snapshot.json", "drizzle/migrations/meta/0001_snapshot.json", "drizzle/migrations/meta/0002_snapshot.json", "drizzle/migrations/meta/_journal.json"], "invariant": "Migration, seed, normal startup, and generated-configuration paths must not hide a weaker credential lifecycle.", "method": "source", "result": "Normal server startup does not invoke migration or seed. The migration wrapper fixes its folder, whereas the package migration command invokes drizzle-kit. Migration statement classification and parsed snapshots/journal showed schema metadata and a source-defined backfill, not seeded credentials, GRANT changes, or an HTTP-selected migration path. TypeScript and generated JavaScript Drizzle configs load database configuration differently; the effective CLI selection was not executed. The concrete lifecycle mismatch is the separately linked seed candidate, not an assumed migration exploit.", "artifact": null}]}]
+VALIDATION BLOCKS
+## Validation rules (apply before reporting ANY finding here)
+
+1. Establish the active source path and effective deployment object; otherwise use `needs_validation` and state which rendered manifest or owner-observed attachment is missing.
+2. Name the lower-trust caller/workload, cloud or application identity, controllable selector, affected resource, and unauthorized operation or disclosure.
+3. Verify provider and orchestrator defaults at the pinned version. Do not assume a public IP, reachable metadata service, permissive firewall, or absent admission attachment.
+4. Local validation may render templates, evaluate policy, inspect container/user namespaces in an isolated fixture, or run an emulator with dummy identities. Do not probe live endpoints or alter shared cloud resources.
+5. Return `confirmed` only with a complete active source trace and concrete boundary result. Return `needs_validation` with the exact deployed policy, identity attachment, overlay, network, or drift observation needed.
+
+## Validation rules (apply before reporting ANY finding here)
+
+1. Name the lower-trust actor, controllable source/cache/artifact/metadata, consuming trusted job or updater, and resulting unauthorized publication, code inclusion, secret disclosure, or privileged execution.
+2. Prove artifact identity across the broken handoff. A different mutable name or unbound digest must reach a real consumer.
+3. Verify built-in package-manager, repository-host, registry, and signing defaults for the pinned version. Unknown hosted controls require `needs_validation`.
+4. Keep local validation bounded: use a harmless fixture repository, dummy credential marker, local registry/config, and non-production artifact namespace. Do not publish or alter a real release.
+5. Return `confirmed` only with a complete source-visible handoff and meaningful result. Return `needs_validation` with the precise branch, runner, registry, signing, or deployment fact an owner must observe.
+
+## Validation rules (apply before reporting ANY finding here)
+
+1. Apply a source-visibility gate. Proxy chains, edge cache keys, IdP policy, certificate trust, browser cookie behavior, secrets, and deployed auth modes may be outside the repository. Record a precise `needs_validation` candidate instead of asserting missing infrastructure behavior.
+2. For framing and cache findings, name both components and the divergent parse/key. Confirm cross-request, cross-user, or private-response impact with bounded local fixtures.
+3. For token, MFA, passkey, account-link, recovery, API-key, and mTLS findings, cite the verification line and missing principal/session/resource/origin/audience/action/assurance binding. Prove the server accepts the invalid transition or credential.
+4. For CSRF, name the ambient credential, state-changing route, accepted cross-site request shape, browser cookie policy, and missing effective check. Read-only actions and routes requiring a non-ambient bearer token do not qualify.
+5. Verify framework and library defaults. If version or configuration is unknown, use `needs_validation`; do not turn an unverified critical claim into a lower-severity confirmed finding.
+6. Return `confirmed` only with a complete source trace and observable unauthorized identity, state, or disclosure. For `needs_validation`, name the missing fact and safe local or owner-observed check that resolves it.
+
+
+SCHEMA
+[{"type": "object", "description": "A source-grounded vulnerability that was independently demonstrated.", "properties": {"verdict": {"type": "string", "const": "confirmed"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$", "description": "A stable source-derived identifier that does not change between validation states."}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "intended_behavior": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "conditions": {"type": "array", "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "description"], "additionalProperties": false}}, "execution": {"type": "object", "description": "Target-neutral reproduction in the target's native interface.", "properties": {"attacker_perspective": {"type": "string", "minLength": 1, "visibleContent": true}, "payloads": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}, "instructions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "observed_result": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["attacker_perspective", "payloads", "instructions", "observed_result"], "additionalProperties": false}, "remediation": {"type": "object", "properties": {"strategy": {"type": "string", "minLength": 1, "visibleContent": true}, "code_changes": {"type": "array", "items": {"type": "object", "properties": {"file_name": {"type": "string", "minLength": 1}, "fixed_code": {"type": "string"}}, "required": ["file_name", "fixed_code"], "additionalProperties": false}}}, "required": ["strategy"], "additionalProperties": false}, "severity": {"type": "object", "properties": {"likelihood": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "impact": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "overall_severity": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}}, "required": ["likelihood", "impact", "overall_severity"], "additionalProperties": false}, "confidence": {"type": "object", "properties": {"score": {"type": "string", "enum": ["low", "medium", "high"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "root_cause", "intended_behavior", "trace", "evidence", "conditions", "execution", "remediation", "severity", "confidence"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate whose decisive validation is blocked.", "properties": {"verdict": {"type": "string", "const": "needs_validation"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "blockers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "validation_plan": {"type": "object", "properties": {"local": {"type": "string", "minLength": 1, "visibleContent": true}, "deployment": {"type": "string", "minLength": 1, "visibleContent": true}}, "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "blockers", "validation_plan"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate refuted during validation.", "properties": {"verdict": {"type": "string", "const": "rejected"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "reason"], "additionalProperties": false}]
+Agent ID verify-18; scratch /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-18/scratch; artifacts /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-18/artifacts. Promotion allowlist empty, byte limits 0. No approved full sandbox: NO TARGET EXECUTION including tests/imports/harnesses. No network, credential-file reads, secret literal output or source edits. You may only write own scratch. Re-read EVERY cited source path/line, try to refute it, independently decide needs_validation or rejected. No severity without bounded observed result. Save exact final JSON {decision,record} to own scratch/result.json then return same. Do not read any other verifier conclusions. Prior records: none.

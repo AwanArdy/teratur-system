@@ -1,0 +1,147 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "fingerprint": "dashboard/derived-analytics/missing-plan-projection",
+    "title": "Starter analytics lack plan-aware projection on dashboard and legacy AI context paths",
+    "description": "Source supports a paid-entitlement hypothesis for an authenticated owner of their own active Starter organization, not a cross-tenant or staff-role bypass. Dashboard assembles paid-sale menu margin reporting without a plan check and always applies opex and waste formulas. GET /ai/context returns expense-inclusive financials; legacy POST /ai/advisor returns the same context in forwardPayload only when RAG_SERVICE_URL is unset. Both /api/v1 and /api mount these routes. No runtime result was obtained. SKU margin uses paid saleItems directly; nonzero opex and waste effects require separate data-lineage conditions. A waste metrics producer exists behind the Growth gate, but Starter availability of that history remains unverified. No opex metrics writer was found in reviewed application source, so ordinary expense creation does not establish a numerical premium-profit disclosure.",
+    "claimed_root_cause": "Dashboard and legacy AI analytics derive and serialize feature outputs without projecting them through the live subscription plan. Authentication supplies planCode, but dashboard and getAggregatedContext receive only tenant/outlet selectors and range. Billing exposes nettProfitIncludesOpex as metadata, not an enforcement control.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/dashboard/dashboard.routes.ts",
+        "line": 9,
+        "scope": "GET /dashboard",
+        "description": "Authenticated Starter owner can request the dashboard; no Growth gate is installed."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/authenticate.ts",
+        "line": 71,
+        "scope": "request context",
+        "description": "Live planCode is available in request context, but authentication itself admits Starter."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/dashboard/dashboard.routes.ts",
+        "line": 14,
+        "scope": "dashboard service invocation",
+        "description": "Only organizationId, outletId and query are passed, discarding the available plan context."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/dashboard/dashboard.repo.ts",
+        "line": 103,
+        "scope": "getMenuPerformance",
+        "description": "Paid-sale lines yield per-menu price, COGS and gross-profit aggregates, without a plan predicate."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/dashboard/dashboard.service.ts",
+        "line": 87,
+        "scope": "dashboard response",
+        "description": "Service return exposes nettProfitIdr, nettMarginPct, wastePct, chart and menuPerformance; route line 20 serializes it without plan filtering."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 634,
+        "description": "Entitlement matrix restricts SKU margin reporting to Growth+; Starter has basic supplier string, not the premium report."
+      },
+      {
+        "file": "PRD.md",
+        "line": 681,
+        "description": "Growth+ profit subtracts operating expenses; Starter ignores opex and uses the gross-profit label. Line 640 explicitly excludes waste percentage from Starter basic COGS."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 91,
+        "description": "Same router is mounted at /api/v1 and /api (line 94); dashboard and AI mounts at lines 80 and 87 have no outer entitlement middleware."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Bearer verification, live unrevoked session, enabled user and organization membership precede context creation. Live subscription supplies planCode at line 80, but authentication does not require Growth."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.schemas.ts",
+        "line": 3,
+        "description": "Range enum, date-pattern and outlet UUID validation do not impose feature entitlements. Own active outlet is sufficient for this hypothesis."
+      },
+      {
+        "file": "src/modules/billing/billing.service.ts",
+        "line": 32,
+        "description": "nettProfitIncludesOpex is false below Growth; billing only returns this flag."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.service.ts",
+        "line": 34,
+        "description": "Unconditionally subtracts opex; line 38 calculates wastePct; lines 66-75 compute per-menu margin. Response lines 87-100 expose these plus chart and profit trend."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.repo.ts",
+        "line": 103,
+        "description": "Top-five menu groups use paid sale lines, tenant and optional outlet predicates; price/COGS and gross profit have no plan predicate. Groups are name snapshots, not guaranteed distinct product IDs."
+      },
+      {
+        "file": "src/modules/dashboard/dashboard.repo.ts",
+        "line": 55,
+        "description": "Monthly profit subtracts daily_metrics opex with tenant/outlet filtering but no plan projection."
+      },
+      {
+        "file": "src/modules/ai/ai.routes.ts",
+        "line": 51,
+        "description": "Authenticated /context passes organization, active outlet and range, not plan, and serializes the returned context at line 59."
+      },
+      {
+        "file": "src/modules/ai/ai.repo.ts",
+        "line": 95,
+        "description": "Financial nett profit subtracts daily_metrics opex and returns it at lines 105-106 independent of plan. Expense-category totals at lines 73-89 are a separate query, not the opex producer. wasteLossIdr at line 107 incorrectly uses transaction count; it is not evidence of actual waste disclosure."
+      },
+      {
+        "file": "src/modules/ai/ai.service.ts",
+        "line": 19,
+        "description": "Legacy advisor builds unprojected context; unset RAG_SERVICE_URL returns forwardPayload at lines 39-43. Current /chat emits basic stock/revenue or generic advice, not a demonstrated premium numeric report."
+      },
+      {
+        "file": "src/modules/reports/reports.service.ts",
+        "line": 139,
+        "description": "Relevant sibling control computes ROP only for Growth+ via lines 10-11 and 63; Starter rop=null implies reorderQty=0 at lines 141-144. Basic stock reporting remains available; this is calibration, not a refutation."
+      },
+      {
+        "file": "src/modules/wastes/wastes.routes.ts",
+        "line": 12,
+        "description": "Primary waste workflow requires Growth; requirePlan also rejects expired plans. Dashboard and legacy AI do not inherit this gate."
+      },
+      {
+        "file": "src/db/schema/ops.ts",
+        "line": 65,
+        "description": "daily_metrics opex and waste default to zero; schema alone does not establish populated Starter metrics."
+      },
+      {
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 103,
+        "description": "Waste creation explicitly inserts/increments daily_metrics.wasteIdr (lines 108-113). This refutes any blanket absence-of-waste-producer claim, but route gating leaves Starter nonzero history/downgrade availability unresolved."
+      },
+      {
+        "file": "src/modules/expenses/expenses.repo.ts",
+        "line": 56,
+        "description": "Expense create writes expenses only; update/delete likewise do not maintain daily_metrics. No application-source opex metrics writer was found."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 319,
+        "description": "Paid sale creation writes price and COGS snapshots into saleItems; lines 366-385 maintain daily revenue/COGS/count. These are source-visible producers independent of the unresolved opex producer."
+      }
+    ],
+    "blockers": [
+      "No approved combined sandbox establishes network isolation, empty allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk plus wall-clock limits. Assignment prohibits target execution. No HTTP/service reproduction or retained execution artifact exists; promotion allowlist is empty.",
+      "SKU margin response behavior still needs bounded execution with dummy paid-sale data. No source-visible application writer establishes nonzero daily_metrics.opexIdr; an owner must identify any external aggregation/backfill. Waste has a Growth-gated writer, but nonzero waste history surviving an authorized downgrade to Starter is not established. Artificial seeded metrics alone cannot prove these deployment preconditions."
+    ],
+    "validation_plan": {
+      "local": "After parent approval of all sandbox controls and any evidence-promotion allowlist, use only dummy Starter/Growth owner sessions and a dummy outlet with paid saleItem price/COGS snapshots. Request GET /api/v1/dashboard?range=week and GET /api/v1/ai/context?range=week, then POST /api/v1/ai/advisor with {\"prompt\":\"summarize\",\"range\":\"week\"} and RAG unset; disable all external calls. Test aliases too. Separately seed explicit nonzero daily revenue, COGS, opex and waste as synthetic projection tests, not proof of natural production lineage. Assert Starter retains basic revenue/COGS/gross profit but not SKU-margin reporting or wastePct, and ignores opex consistently in KPI, trend, chart and legacy AI copies. Growth retains entitled outputs. Pass live plan into a shared feature projection rather than blanket Growth-gating basic dashboard/AI. Keep /reports/stock Starter rop=null and reorderQty=0. Stop at the minimum response difference; do not test shared services.",
+      "deployment": "Owner source/configuration review only, without deployed probing: identify the actual opex aggregation/backfill, if any, and confirm how it populates daily_metrics. Review supported downgrade transitions and whether nonzero Growth waste history remains queryable after Starter activation. If these conditions do not exist, narrow the practical hypothesis to paid-sale margin reporting rather than claiming nonzero expense/waste effects."
+    },
+    "verdict": "needs_validation"
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "auth/reset-password/check-then-consume",
+    "title": "Password-reset single-use enforcement appears vulnerable to concurrent consumption",
+    "description": "Source supports a same-token race hypothesis, not an observed exploit. An unauthenticated actor who already possesses the same live reset token as its legitimate recipient could submit a competing replacement password for that token-bound user. If both calls read the unconsumed row before either consumes it, each proceeds to a password write, potentially replacing the password selected during legitimate recovery. Token acquisition is a prerequisite, not demonstrated by this candidate; ordinary post-consumption replay is rejected. No arbitrary-user selection, credential guessing, or runtime account takeover was established.",
+    "claimed_root_cause": "resetPassword reads and checks the token once, awaits Argon2 hashing, updates the user password, then separately consumes the token and revokes sessions. The repository lookup has no row lock; consumption updates solely by token ID without a consumedAt/expiry predicate or affected-row arbitration, and password mutation does not depend on an exclusive claim. No surrounding transaction or compensating source-visible reset middleware was found. The original trace placed consumption before the password sink even though execution orders the password write first; the corrected trace follows execution order and records consumption separately as evidence.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 108,
+        "scope": "POST /auth/reset-password",
+        "description": "Public handler parses JSON token/newPassword, invokes resetPassword, and returns 204 on completion; no authenticate middleware is attached. Mounted under /api/v1 and /api."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.schemas.ts",
+        "line": 59,
+        "scope": "resetPasswordSchema",
+        "description": "Requires a nonempty token and a replacement password between 8 and 128 characters; possession of the token, not an Authorization header, supplies recovery authority."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 188,
+        "scope": "findPasswordResetTokenByHash",
+        "description": "Selects the reset row by the submitted token hash, without an explicit lock or atomic claim."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 371,
+        "scope": "resetPassword validation and mutation",
+        "description": "Rejects missing, consumed, or expired rows, then awaits hashing at line 374 and invokes the password update at line 375 before consumption and session revocation."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 197,
+        "scope": "updateUserPassword",
+        "description": "Updates users.passwordHash using the user ID from the reset row, with no token-state condition on the credential mutation."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 188,
+        "description": "Recovery token policy explicitly requires a one-hour lifetime and single use; line 189 requires revocation of all refresh tokens on reset."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 374,
+        "description": "Password hashing, password update, token consumption, and refresh revocation are separate awaits at lines 374-377, with no transaction wrapping this method."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 193,
+        "description": "Consumption sets consumedAt by ID only, and does not require an unconsumed, unexpired token or return a successful exclusive claim."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 187,
+        "description": "The lookup method performs a plain hash-based select at line 188; sequential replay is subsequently rejected by the service but concurrent snapshots are not arbitrated here."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 211,
+        "description": "Reset table defines token hash, bound user, expiry and nullable consumed timestamp. Its definition does not enforce exclusive consumption."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 996,
+        "description": "Unique index constrains token_hash uniqueness, not the number of successful uses of an existing row; reviewed migrations contain no reset-consumption trigger."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 186,
+        "description": "Current reset schema likewise has a user foreign key and unique token hash, but no single-use arbitration mechanism."
+      },
+      {
+        "file": "src/lib/otp.ts",
+        "line": 15,
+        "description": "Reset issuance uses a cryptographically random 32-byte opaque token; hashToken at line 19 hashes the exact raw input. This restricts the hypothesis to actors already holding the valid capability."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 354,
+        "description": "Forgot-password can create a reset row for an existing user with a one-hour expiry; the public response does not return the raw token. No token-acquisition exploit is assumed here."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 67,
+        "description": "Auth router is mounted without global authentication or reset serialization; lines 91 and 94 expose the same router under both API prefixes."
+      },
+      {
+        "file": "src/db/client.ts",
+        "line": 6,
+        "description": "The shared database client is directly constructed and passed to Drizzle; this source defines no request-level transaction or reset lock."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 25,
+        "description": "Protected endpoints check server-side session revocation. This is a real containment control for existing sessions but does not arbitrate the public password-reset transition."
+      }
+    ],
+    "blockers": [
+      "No complete parent-approved OS-enforced sandbox is available: combined scratch-only writes and aggregate process-tree CPU, memory, PID and disk limits are not established. The assignment forbids target execution, including tests, imports and harnesses; none was performed.",
+      "Concurrent acceptance against isolated PostgreSQL, both response outcomes, and the final dummy-account password have not been observed. Source establishes the interleaving opportunity, not a reproduced unauthorized credential mutation.",
+      "Artifact promotion allowlist is empty with zero byte limits; no execution artifact can be retained as evidence under the current assignment."
+    ],
+    "validation_plan": {
+      "local": "Only after the parent supplies the complete approved sandbox and predeclares minimal promotion files, use an isolated disposable PostgreSQL database and one active dummy user with a dummy organization membership, one unexpired reset row, and dummy sessions. Exercise the real HTTP/schema/service/repository path through POST /api/v1/auth/reset-password with JSON {token: <same dummy token>, newPassword: OwnerDummyPassword01!} and {token: <same dummy token>, newPassword: RivalDummyPassword02!}. Use a test-only barrier after each successful service token check, retaining the real database queries, then release the owner call through completion before releasing the rival call to its password write. Capture only status outcomes, mutation count, consumed/session flags and booleans comparing the final dummy hash with the two known passwords; never capture token/hash values. Stop at this minimum result. Include invalid-token, expired-token and sequential-replay rejection controls. A regression must permit exactly one successful claimant and one password mutation, with all dummy refresh sessions revoked. Fix in auth.service.ts/auth.repo.ts by hashing before a short database transaction, conditionally claiming the token with consumed_at IS NULL and a trusted expiry check and requiring one returned row, then updating the bound password and revoking sessions in that same transaction; roll back all effects on failure. A consumption-only change after the password write is insufficient.",
+      "deployment": "No deployed endpoint testing is needed or authorized. If owner-specific database triggers or request serialization are asserted as compensating controls, the owner should inspect their definitions and repeat only the disposable isolated fixture with those controls represented. Do not infer such deployment controls from their absence in repository source."
+    }
+  }
+}

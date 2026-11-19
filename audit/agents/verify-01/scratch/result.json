@@ -1,0 +1,121 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "auth/refresh/check-then-revoke-session",
+    "title": "Refresh consumption is not atomic with rotation or account-wide revocation",
+    "description": "Source supports, but execution has not demonstrated, a concurrent session-lifecycle bypass. An actor already holding a copied, live refresh token for an active organization member could race the legitimate holder: both requests may pass the same predecessor's unrevoked/expiry check and independently issue successor sessions. Revoking the predecessor or one successor would not by itself revoke the other. Both successors would be visible through the user's session list; this is not a hidden-session claim. A related schedule may allow an already-admitted refresh to insert a usable successor after password reset completes account-wide revocation, contrary to DESIGN.md:1128. The affected identity and organization remain those bound to the copied token; token theft, cross-tenant access, role escalation, and disabled-account bypass are not established. Sequential replay is rejected. No concrete unauthorized acceptance or severity is claimed without bounded execution.",
+    "claimed_root_cause": "authService.refresh performs a plain session lookup and in-memory lifecycle check, an unconditional revocation by ID, and a successor insert as separate database operations. revokeRefreshToken neither conditions consumption on revokedAt being null nor returns a checked consumption result. There is no shared transaction, predecessor/family binding, or user revocation epoch coupling successor creation to account-wide revocation. A conditional consume plus transactional insert must enforce single consumption; additionally, refresh and reset/change-password revocation must share a per-user serialization or epoch protocol. A transaction alone is not sufficient if it leaves the initial read/check and unconditional update unchanged.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 58,
+        "scope": "POST /api/v1/auth/refresh and /api/auth/refresh",
+        "description": "Public handler parses a nonempty body.refreshToken and invokes authService.refresh without access-token middleware; the opaque capability is the lower-trust authorization input."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 264,
+        "scope": "authService.refresh admission",
+        "description": "Reads by token hash and rejects absent, revoked, or expired rows at line 266, then separately awaits revocation at line 270. A request admitted before another revocation does not reread source state."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 173,
+        "scope": "authRepo.revokeRefreshToken",
+        "description": "Updates revokedAt using only the session ID and returns no checked successful-consumption result; a second previously admitted caller is not rejected here."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 276,
+        "scope": "successor-session issuance",
+        "description": "Inserts a fresh session for the predecessor's user and organization, signs an access token bound to the new session ID at lines 293-298, and returns both new capabilities at lines 300-304. No intervening source-session or account-wide revocation check occurs."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1292,
+        "description": "Explicit refresh policy is rotation: revoke the old refresh capability and issue a new one."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1128,
+        "description": "Successful password reset must revoke all refresh sessions for the user, providing an explicit recovery boundary rather than an assumed logout-family policy."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 67,
+        "description": "Mounts authRouter without authentication or a request-serialization wrapper; lines 91-94 expose the same router under /api/v1 and /api. Helmet, CORS, and JSON size limits do not supply session-consumption atomicity."
+      },
+      {
+        "file": "src/modules/auth/auth.schemas.ts",
+        "line": 42,
+        "description": "Refresh input is an object containing a nonempty refreshToken string; no access token or additional user credential is required."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 168,
+        "description": "Lookup is a plain select by hash. Successor insertion at lines 162-165 and revocation at lines 173-178 use the global database directly, not a shared transaction or exclusive consumption predicate."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 177,
+        "description": "Account-wide revocation updates refresh rows by userId; it records no account epoch that a later successor insert must satisfy."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 375,
+        "description": "Password reset updates the password, consumes the reset capability, and awaits revokeAllUserRefreshTokens at line 377. Change-password also updates the password and revokes all refresh rows at lines 388-389; neither shares synchronization with refresh."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Strong downstream controls require a signed, valid access token and its own unrevoked sid row, then reject missing/disabled users and missing organization memberships. The live membership role at line 75 overrides the JWT role. These controls limit the hypothesis to an active existing member but do not check a predecessor, password-change timestamp, or revocation epoch."
+      },
+      {
+        "file": "src/lib/jwt.ts",
+        "line": 30,
+        "description": "Access verification delegates signature/expiry validation to jwtVerify and requires typ=access. Successor tokens are generated normally with their own sid and 15-minute expiry; the candidate does not require forging JWTs or treating onboarding tokens as access tokens."
+      },
+      {
+        "file": "src/lib/otp.ts",
+        "line": 15,
+        "description": "Opaque tokens use 32 cryptographically random bytes and SHA-256 hashing. Guessing a capability is not established; possession of an existing valid copied refresh capability is a necessary attacker prerequisite."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 141,
+        "description": "Refresh rows have independent random IDs, nullable revokedAt, user/org foreign keys, and uniqueness only on tokenHash. No predecessor, token-family, or epoch field enforces a single successor."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 220,
+        "description": "Source migration defines independent refresh rows with nullable revoked_at; hash uniqueness at line 997 does not prevent two independently random successor tokens. Reviewed SQL migrations contain no refresh-consumption trigger. Actual database behavior remains unobserved."
+      },
+      {
+        "file": "src/modules/me/me.repo.ts",
+        "line": 72,
+        "description": "User-scoped active-session listing would expose both unrevoked successors. Per-session revocation checks userId and session ID at lines 86-92 but updates only that selected session. Account disable also sets user status, which authenticate checks, so disabled-account persistence is not established."
+      },
+      {
+        "file": "tests/auth-plan.test.ts",
+        "line": 192,
+        "description": "Existing lifecycle test substitutes authService.login success; refresh references are fixtures or presence assertions, not concurrent rotation, recovery, PostgreSQL isolation, or successor-authentication tests. Source inspection of tests supplies no decisive runtime refutation or reproduction."
+      }
+    ],
+    "blockers": [
+      "No approved OS-enforced execution sandbox is available: combined scratch-only writes and aggregate process-tree CPU, memory, PID, and disk limits are not established. Target execution, including tests, imports, harnesses, and PostgreSQL fixtures, was prohibited; no network or credential-file access was performed.",
+      "The decisive missing observation is whether two admitted requests actually return distinct usable successors against isolated PostgreSQL, and whether a successor inserted after completed dummy-user password reset remains accepted by authenticate. Source establishes the unsynchronized path but no runtime boundary result.",
+      "The current artifact promotion allowlist is empty with zero byte limits. Any future execution evidence requires parent-approved predeclared bounded files and trusted parent-side promotion after the complete sandbox process tree terminates; no execution artifact is relied on here."
+    ],
+    "validation_plan": {
+      "local": "Only after the parent provides the complete approved sandbox and promotion controls, use an isolated PostgreSQL fixture, empty allowlisted environment, no external network, scratch-only writes, and explicit low aggregate resource and wall-clock limits. Seed one dummy active user, one organization membership, and one valid source refresh session. Schedule A: submit exactly two POST /api/v1/auth/refresh JSON requests containing the same dummy refresh token; pause both immediately after the live source lookup, then release them. Record response status and successor session IDs without raw tokens; use each returned access capability for one GET /api/v1/me to establish whether both succeed. Revoke one successor through the user-scoped session endpoint and check the other once; verify both had appeared in the session list. Schedule B with a fresh fixture: pause one refresh after its source read and revocation but before successor insertion; complete exactly one dummy-user password-reset operation through the source service or HTTP interface using a seeded dummy reset capability, wait for its revoke-all to finish, then release the insert and perform one GET /api/v1/me with the returned access capability. Stop at the minimum success/failure boundary; do not contact deployed services. A regression must reject sequential replay, allow only one consumer per predecessor, and prevent a pre-recovery capability from producing a usable post-recovery successor. Enforce atomic conditional consumption plus successor creation and a shared per-user revocation serialization/epoch protocol; test active-member controls as well as session state.",
+      "deployment": "No live probe is needed or authorized. If the owner asserts additional database triggers, session serialization, or revocation-epoch enforcement outside source, obtain non-secret definitions and exercise those controls only in the approved disposable fixture. Do not infer their presence or absence from this source review. No meaningful comparable baseline was established."
+    }
+  }
+}

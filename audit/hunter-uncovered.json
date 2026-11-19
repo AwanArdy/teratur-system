@@ -1,0 +1,39 @@
+[
+  {
+    "surface": "src/modules/staff",
+    "boundary": "per-plan staff allocation",
+    "subsystem": "src/modules/staff",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/modules/staff/staff.service.ts",
+      "src/modules/staff/staff.routes.ts",
+      "src/modules/staff/staff.repo.ts",
+      "src/modules/billing/billing.service.ts",
+      "PRD.md"
+    ],
+    "reason": "PRD.md:632 specifies starter/trial and growth staff caps, while the inspected createStaff service directly delegates insertion and billing reports no growth staff limit. Route, repository and aggregate enforcement require their own completed trace; no staff-quota candidate is claimed from this partial read."
+  },
+  {
+    "surface": "src/modules/auth",
+    "boundary": "public identity and session lifecycle",
+    "subsystem": "src/modules/auth",
+    "attack_class": "Cryptography and secrets",
+    "starting_paths": [
+      "src/modules/auth/auth.service.ts",
+      "src/modules/auth/auth.routes.ts",
+      "src/lib/logger.ts"
+    ],
+    "reason": "Peer handoff, not an additional duplicate finding: auth.service.ts:62,350 logs OTP values and line 365 logs the raw password-reset capability without a production gate. Confirm the auth peer covers these explicit credential sinks and their consume/revoke paths; the global bearer-header candidate does not subsume direct message-template logging."
+  },
+  {
+    "surface": "src/modules/ai",
+    "boundary": "derived data and external advisor",
+    "subsystem": "src/modules/ai",
+    "attack_class": "Feature abuse and data leakage",
+    "starting_paths": [
+      "src/modules/ai/ai.service.ts",
+      "src/middleware/errorHandler.ts"
+    ],
+    "reason": "Peer handoff: the HttpError constructor scan found downstream RAG response text exposed as error details at ai.service.ts:59-64 and caught error messages exposed at lines 71-74. Generic error sanitization does not cover this explicit passthrough; whether it discloses protected data requires the AI peer's downstream/source trace rather than a guessed deployment claim."
+  }
+]

@@ -1,0 +1,157 @@
+You did not write this candidate. Try to refute it from repository source and bounded
+local evidence. Do not contact deployed endpoints or external/shared services. Run
+target-controlled code only inside the approved OS-enforced sandbox: no external
+network, empty allowlisted environment, read-only target and tools, scratch-only
+writes, and explicit low resource and wall-clock limits. If any control is unavailable,
+do not execute; retain the exact missing capability as a needs_validation blocker.
+Treat every scratch entry as target-controlled after execution. After the sandbox and
+all its processes terminate, only trusted parent-side code may promote a predeclared
+scratch-relative file, following the promotion procedure block included verbatim in
+this prompt. You and target code never write retained artifacts. If promotion is
+unavailable or fails, do not use that file as evidence.
+
+1. Verify every trace and evidence file, positive line number, scope, and description.
+   Confirm the first entry is a real lower-trust entrypoint and the last is the
+   claimed sink or boundary effect.
+2. Reconstruct the strongest source-visible validation, identity, authorization,
+   normalization, lifecycle, framework, and containment controls on the path.
+   Where the architecture summary names a comparable baseline, note whether it
+   shares the pattern — as calibration, never as grounds to dismiss.
+3. For a proposed confirmed candidate, independently reproduce the minimum observed
+   result when possible. Verify inputs, interface shape, conditions, and affected
+   dummy principal/resource. Do not infer a stronger result or continue after it.
+4. Verify that likelihood, impact, confidence, and the proposed source fix match only
+   what the evidence establishes.
+5. For a proposed needs_validation candidate, decide whether the blocker is genuinely
+   outside source/local observation. If source refutes the trace, reject it. If the
+   missing fact remains decisive, keep needs_validation and make the local and
+   owner-observed plans exact and non-destructive.
+6. Preserve the fingerprint for the same source-derived root cause across every state.
+
+Return exactly one JSON object and no surrounding prose:
+{"decision": "confirmed|needs_validation|rejected", "record": { ... }}
+where record exactly matches the decision's verdict branch of the schema included
+in this prompt. A corrected record replaces the hunter's wording.
+```
+
+Copy this promotion procedure verbatim into every candidate-verifier prompt:
+
+```text
+Artifact promotion procedure (trusted parent-side code only):
+Reference only for you: the parent performs these steps; you never perform them.
+
+Before execution, the parent opens and retains trusted, non-inheritable directory
+descriptors for the agent's scratch/ and artifacts/ roots, and records an allowlist
+of expected scratch-relative artifact files plus explicit per-file and cumulative
+byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox
+and all its processes terminate, trusted parent-side code promotes each allowlisted
+file separately:
+
+1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or
+   symlinked components.
+2. Walk each parent component from the retained scratch-root descriptor with
+   no-follow directory-relative operations; never reopen by path.
+3. Open the leaf no-follow and nonblocking.
+4. Verify with `fstat` that it is a regular file with link count exactly one and
+   within the recorded per-file and cumulative byte limits.
+5. Enforce those limits again while reading from that descriptor.
+6. Copy exactly the verified size, repeat `fstat`, and reject a changed identity,
+   type, link count, or size.
+7. For the destination, walk every parent component from the retained
+   artifacts-root descriptor with no-follow directory-relative operations; require
+   each existing component to be a real directory, and create any missing directory
+   exclusively before reopening and verifying it no-follow.
+8. Create the leaf exclusively without following links, verify that the opened
+   destination is a regular file with link count exactly one, and copy from the
+   verified source descriptor without reopening either path.
+9. Use equivalent race-safe APIs on non-POSIX systems.
+10. Never recursively copy or glob scratch, extract an archive into artifacts, or
+    open or promote a symlink, FIFO, socket, device, directory, hard-linked file,
+    changing file, or file that exceeds its bound.
+11. If any check is unavailable, cannot be enforced, or fails, discard the scratch
+    entry; if it is decisive evidence, retain `needs_validation` with the exact
+    promotion blocker.
+```
+
+
+ARCHITECTURE
+# Architecture and audit scope
+
+TERATUR-ID backend is a multi-tenant Indonesian F&B operations API. Node/TypeScript Express 5 and Drizzle/postgres-js handle identities, organizations, outlets, catalogs, inventory, POS/sales, expenses, workforce/payroll, reports and optional AI advisor forwarding. Both /api/v1 and /api mount the same router (src/app.ts:67-94).
+
+Principals are anonymous callers, organization owner/admin/staff, optional linked staff records, backend DB service, and an optional external RAG service. Protected resources include identity/session capabilities, other organizations' data, outlet operations, employment/payroll information, financial/inventory integrity and paid service entitlements. Authentication reloads live sessions, users and memberships (src/middleware/authenticate.ts:9-82). Organization roles and plans have separate middleware. Outlet context currently loads all organization outlets; PRD outlet assignment policy needs careful comparison rather than assumed correctness.
+
+Public identity flows include onboarding/OTP, login, refresh, reset and logout. Entry inputs include JSON, path/query selectors, Bearer and outlet/idempotency headers. Sensitive flows include foreign-object references into catalog/staff/warehouse resources; concurrent sale/cancel, transfer/receipt, stock approval and shift close; report/AI copies and exports; subscription selection; and credential logging. Role policy must be established from source requirements, not assumed from missing middleware.
+
+Source deployment is a PostgreSQL-only Compose service plus documented build/start. Runtime configuration controls signing material, DB, CORS and optional RAG forwarding. Production ingress/TLS, DB policies, billing integration, log readership and downstream RAG policies are unobserved. Do not probe any deployed service. No meaningful comparable baseline was established.
+
+Read-only reconnaissance covered all modules, schemas, tests and manifests. npm run build and npm test require existing dependencies; tests mock important boundaries and do not prove actual DB isolation. No target-controlled execution is approved: OS primitives exist, but combined scratch-only writes and aggregate process-tree CPU/memory/PID/disk limits are not established. Do not run builds, tests, harnesses, application imports or target validators outside the required sandbox. Source-grounded candidates therefore remain needs_validation unless independently bounded execution becomes possible. Do not install dependencies or read credential files. Do not emit literal embedded credential values.
+
+Full repository source scope includes src, tests, migrations, manifests, docs, tracked generated Drizzle config and the untracked docker-compose.yml. Source revision 01addef3622c31cedce58382572573170505844a on main; untracked Compose makes the reviewed worktree dirty. No prior coverage ledger/findings found in audit or ~/security-audit-skill. Reports are in locally ignored audit/; parent is sole writer of shared artifacts.
+
+Companions: WEB-PROTOCOL-AND-AUTH for HTTP/session/account transitions; DATA-ISOLATION-AND-LIFECYCLE for tenant/object, analytics/export/deletion boundaries; RESOURCE-EXHAUSTION-AND-AVAILABILITY for public hashing and shared DB/RAG work; AI-AND-LLM for retrieval/context/output (no tool execution established); CLOUD-AND-DEPLOYMENT for runtime config and Compose; SUPPLY-CHAIN-AND-RELEASE for local manifests/build inputs. No native memory, browser DOM, local IPC, federated identity, MCP or message-broker boundary is source-established. Do not assert current CVEs without an authoritative available advisory; network dependency audits are outside this run.
+
+CANDIDATE
+{
+  "proposed_verdict": "needs_validation",
+  "fingerprint": "sales/createSale/unrestricted-unit-price-override",
+  "title": "Cashier price overrides bypass the documented permission requirement",
+  "description": "An authenticated organization staff caller can submit unitPriceIdr, including zero, through either sales creation endpoint. The shared service uses it instead of the master price while consuming stock and recording a paid sale, without checking any override permission.",
+  "claimed_root_cause": "Both public schemas accept an optional price override, and createSale selects it without receiving or testing an authorization decision. Product-master write restrictions do not protect this alternate transaction-pricing path.",
+  "trace": [
+    {
+      "kind": "entrypoint",
+      "file": "src/modules/pos/pos.routes.ts",
+      "line": 44,
+      "scope": "POST /pos/sales",
+      "description": "Authenticated outlet requests reach the sale service after schema parsing and idempotency middleware; there is no price-override authorization."
+    },
+    {
+      "kind": "propagation",
+      "file": "src/modules/pos/pos.schemas.ts",
+      "line": 21,
+      "scope": "posSaleSchema",
+      "description": "Accepts caller-supplied nonnegative unitPriceIdr; createSaleSchema exposes the same field."
+    },
+    {
+      "kind": "sink",
+      "file": "src/modules/sales/sales.service.ts",
+      "line": 110,
+      "scope": "createSale",
+      "description": "Uses the supplied price directly and subsequently records a paid sale with stock deductions."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "PRD.md",
+      "line": 358,
+      "description": "Cashier override is explicitly conditional on permission."
+    },
+    {
+      "file": "src/modules/products/products.routes.ts",
+      "line": 75,
+      "description": "Master-product updates require owner/admin, but the alternate sale path does not test an equivalent pricing permission."
+    }
+  ],
+  "blockers": [
+    "No approved execution sandbox is available to demonstrate the paid-sale and stock result with a dummy staff principal."
+  ],
+  "validation_plan": {
+    "local": "In an approved isolated fixture, create a cashier membership without pricing authority and a stocked product. Submit a zero override through each sibling endpoint using distinct keys. Check persisted prices, paid status and stock movements; enforce an explicit override permission and add denial/default-price regression cases."
+  }
+}
+LINKED UNIT CHECKS
+[{"coverage_id": "src%2Fmodules%2Fsales::financial%20state%20transitions::src%2Fmodules%2Fsales::ATTACK-CLASSES.md%23Access%20control", "local_checks": [{"agent_id": "hunt-commerce", "reviewed_paths": ["PRD.md", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requireOutlet.ts", "src/modules/sales/sales.routes.ts", "src/modules/sales/sales.schemas.ts", "src/modules/sales/sales.service.ts", "src/modules/sales/sales.repo.ts", "src/modules/pos/pos.routes.ts", "src/modules/pos/pos.schemas.ts", "src/modules/pos/pos.service.ts", "src/modules/products/products.routes.ts", "src/db/schema/sales.ts"], "invariant": "Sale selectors must bind tenant and outlet; transaction price overrides and voids must respect documented authority.", "method": "source", "result": "Sales list/detail/cancel selectors bind organization and active outlet, and POS delegates to the same sale service. However, both creation schemas expose unrestricted price overrides, cashier references are accepted without tenant validation, and cancellation does not enforce same-shift or owner-only historical void rules. Global outlet-assignment enforcement belongs to the authentication peer and is not duplicated here.", "artifact": null}, {"agent_id": "hunt-commerce", "reviewed_paths": ["src/modules/shifts/shifts.routes.ts", "src/modules/shifts/shifts.schemas.ts", "src/modules/shifts/shifts.service.ts", "src/modules/shifts/shifts.repo.ts", "src/modules/expenses/expenses.routes.ts", "src/modules/expenses/expenses.schemas.ts", "src/modules/expenses/expenses.service.ts", "src/modules/expenses/expenses.repo.ts", "src/db/schema/staff.ts", "src/db/schema/expenses.ts", "drizzle/migrations/0000_ambiguous_silver_fox.sql"], "invariant": "Financial mutations must preserve tenant identity, enforce mutation roles, and validate referenced objects.", "method": "source", "result": "Expense patch/delete require owner/admin and use organization predicates; parsed schemas do not expose organization/outlet mutation fields. Shift open accepts a foreign staff UUID without validation, and shift listing joins that reference to staff names. Expense supplier references similarly lack tenant validation, but no unauthorized supplier disclosure or victim-row mutation was established. ID-based shift close binds organization but not active outlet; its broader outlet-policy impact overlaps the authentication peer.", "artifact": null}]}]
+VALIDATION BLOCKS
+## Validation rules (apply before reporting ANY finding here)
+
+1. Name attacker or lower-trust principal, protected data/state, affected owner/tenant, alternate copy or operation, and unauthorized disclosure or mutation.
+2. Cite both intended source-of-truth policy and the path that omits or disagrees with it. Confirm another layer does not enforce the same tenant/lifecycle condition.
+3. Use local dummy tenants and non-sensitive fixtures to prove cross-scope access or stale lifecycle behavior. Stop at the minimum observable record or operation.
+4. If external cache, object storage, replicas, analytics, backup, or retention policy is required, classify `needs_validation` and state the owner-observed check.
+5. Return `confirmed` only with complete lineage and concrete boundary impact. Return `needs_validation` with the exact unresolved storage, ACL, invalidation, retention, or restore fact.
+
+
+SCHEMA
+[{"type": "object", "description": "A source-grounded vulnerability that was independently demonstrated.", "properties": {"verdict": {"type": "string", "const": "confirmed"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$", "description": "A stable source-derived identifier that does not change between validation states."}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "intended_behavior": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "conditions": {"type": "array", "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "description"], "additionalProperties": false}}, "execution": {"type": "object", "description": "Target-neutral reproduction in the target's native interface.", "properties": {"attacker_perspective": {"type": "string", "minLength": 1, "visibleContent": true}, "payloads": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}, "instructions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "observed_result": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["attacker_perspective", "payloads", "instructions", "observed_result"], "additionalProperties": false}, "remediation": {"type": "object", "properties": {"strategy": {"type": "string", "minLength": 1, "visibleContent": true}, "code_changes": {"type": "array", "items": {"type": "object", "properties": {"file_name": {"type": "string", "minLength": 1}, "fixed_code": {"type": "string"}}, "required": ["file_name", "fixed_code"], "additionalProperties": false}}}, "required": ["strategy"], "additionalProperties": false}, "severity": {"type": "object", "properties": {"likelihood": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "impact": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "overall_severity": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}}, "required": ["likelihood", "impact", "overall_severity"], "additionalProperties": false}, "confidence": {"type": "object", "properties": {"score": {"type": "string", "enum": ["low", "medium", "high"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "root_cause", "intended_behavior", "trace", "evidence", "conditions", "execution", "remediation", "severity", "confidence"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate whose decisive validation is blocked.", "properties": {"verdict": {"type": "string", "const": "needs_validation"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "blockers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "validation_plan": {"type": "object", "properties": {"local": {"type": "string", "minLength": 1, "visibleContent": true}, "deployment": {"type": "string", "minLength": 1, "visibleContent": true}}, "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "blockers", "validation_plan"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate refuted during validation.", "properties": {"verdict": {"type": "string", "const": "rejected"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "reason"], "additionalProperties": false}]
+Agent ID verify-14; scratch /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-14/scratch; artifacts /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-14/artifacts. Promotion allowlist empty, byte limits 0. No approved full sandbox: NO TARGET EXECUTION including tests/imports/harnesses. No network, credential-file reads, secret literal output or source edits. You may only write own scratch. Re-read EVERY cited source path/line, try to refute it, independently decide needs_validation or rejected. No severity without bounded observed result. Save exact final JSON {decision,record} to own scratch/result.json then return same. Do not read any other verifier conclusions. Prior records: none.

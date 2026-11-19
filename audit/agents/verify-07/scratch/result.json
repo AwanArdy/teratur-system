@@ -1,0 +1,145 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "fingerprint": "inventory/explicit-warehouse/unbound-balance-mutation",
+    "title": "Explicit warehouse references can target another organization's stock",
+    "description": "Source review supports, but does not demonstrate, a cross-tenant stock mutation: an authenticated organization-A owner/admin/staff member with growth-or-higher non-expired plan, an A active outlet, and known B warehouse/item UUIDs can select B's existing balance through POST /api/v1/wastes (also /api/wastes). The transaction would decrement that balance and attribute movement/waste/metrics to A if all later inserts commit. Adjustment uses the same helper without a plan gate; opname requires A owner/admin approval. No runtime mutation or UUID-discovery path was established.",
+    "claimed_root_cause": "Explicit warehouseId bypasses the organization/outlet-scoped default lookup. findBalanceForUpdate selects by warehouseId/itemType/itemId only, and upsertBalance updates an existing row by primary key without organization/outlet predicates. Independent foreign keys establish existence, not ownership agreement. Enforce warehouse organization and active-outlet ownership before these operations and carry organization/outlet predicates into balance lookup/update; validate item ownership in adjustment.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/wastes/wastes.routes.ts",
+        "line": 32,
+        "scope": "POST /wastes",
+        "description": "HTTP POST accepts untrusted JSON after live authentication, growth-or-higher non-expired plan, active-outlet and owner/admin/staff role gates; schema parses optional warehouse UUID, item UUID/type and positive qty."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 27,
+        "scope": "wastesService.createWaste",
+        "description": "Only an omitted warehouse invokes getDefaultWarehouse with organization/outlet filters; an explicit warehouse is passed directly to the balance lookup."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 99,
+        "scope": "inventoryRepo.findBalanceForUpdate",
+        "description": "SELECT FOR UPDATE identifies a balance solely by warehouseId, itemType and itemId and returns quantity and cost without an organization predicate."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/inventory/inventory.repo.ts",
+        "line": 136,
+        "scope": "inventoryRepo.upsertBalance",
+        "description": "The existing-row branch updates quantity/cost by existing.id at line 144; data.organizationId/outletId are not update predicates. This is a transaction-local sink, not evidence that commit occurred."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 259,
+        "description": "The explicit tenant-isolation contract requires token-A requests to organization-B resources to return 404; line 261 states v1 does not use RLS."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 71,
+        "description": "Authentication establishes organization and outlet context, but does not inspect body warehouse references."
+      },
+      {
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 42,
+        "description": "The stock-availability check can succeed against the selected foreign balance; line 57 then writes the decremented balance."
+      },
+      {
+        "file": "src/modules/inventory/inventory.service.ts",
+        "line": 55,
+        "description": "Adjustment creation has the same explicit-warehouse bypass. Its item existence check at lines 65-70 also omits organization and deletedAt."
+      },
+      {
+        "file": "src/modules/opnames/opnames.service.ts",
+        "line": 25,
+        "description": "Opname creation accepts the same unbound warehouse and snapshots its balance. Approval at lines 77-95 subsequently mutates that balance; this variant requires an A owner/admin approval."
+      },
+      {
+        "file": "src/modules/transfers/transfers.service.ts",
+        "line": 31,
+        "description": "Sibling transfer creation demonstrates the stronger control: both warehouses must match ctx.organizationId."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 10,
+        "description": "Organization, outlet and warehouse are independent foreign keys; the warehouse/type/item unique key and quantity checks do not enforce matching ownership."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 729,
+        "description": "The migrated balance-to-warehouse constraint is a single-column warehouse UUID foreign key, not a tenant-composite ownership constraint."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 83,
+        "description": "Wastes router is mounted under both /api/v1 and /api (lines 91-94); global JSON parsing and request-ID middleware do not bind body warehouse ownership."
+      },
+      {
+        "file": "src/modules/wastes/wastes.schemas.ts",
+        "line": 3,
+        "description": "UUID/type/positive-quantity and uom/reason checks validate shape, not warehouse or item ownership."
+      },
+      {
+        "file": "src/middleware/requirePlan.ts",
+        "line": 19,
+        "description": "Growth-or-higher plan level is required for wastes/opnames; expired status is rejected at line 31."
+      },
+      {
+        "file": "src/modules/inventory/inventory.routes.ts",
+        "line": 39,
+        "description": "Adjustment permits authenticated owner/admin/staff with an active outlet and has no requirePlan gate."
+      },
+      {
+        "file": "src/modules/opnames/opnames.routes.ts",
+        "line": 47,
+        "description": "Approval requires owner/admin. The organization-scoped document lookup does not validate the stored foreign warehouse."
+      },
+      {
+        "file": "src/modules/opnames/opnames.repo.ts",
+        "line": 49,
+        "description": "getById binds the opname document to organizationId, so the candidate concerns an A-owned document referencing B stock, not direct approval of a B document."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 36,
+        "description": "Movement, waste and opname tables have independent organization/outlet/warehouse foreign keys; item UUIDs are not tenant-composite foreign keys. No ownership agreement is established by these definitions."
+      },
+      {
+        "file": "drizzle/migrations/0001_magical_rattler.sql",
+        "line": 38,
+        "description": "Later migration enforces nonnegative on-hand/reserved and reserved <= on-hand (lines 44,50), not tenant ownership; choose waste quantity within available unreserved stock."
+      },
+      {
+        "file": "src/modules/warehouses/warehouses.repo.ts",
+        "line": 49,
+        "description": "Warehouse update binds id and organization, and list binds organization/outlet at lines 10-14. These controls are local to warehouse CRUD and are not called by explicit waste/adjustment/opname references."
+      },
+      {
+        "file": "src/middleware/requestId.ts",
+        "line": 5,
+        "description": "Default request ID is req_ plus ULID, but caller-supplied X-Request-Id is accepted. Waste movement uses ctx.requestId as refId (wastes.service.ts:79), while stock_movements.ref_id is UUID (inventory.ts:56). A valid UUID request header is necessary for this waste/adjustment reproduction to avoid rollback from the default non-UUID value."
+      },
+      {
+        "file": "src/modules/wastes/wastes.service.ts",
+        "line": 84,
+        "description": "Waste and daily metrics writes follow the balance update inside the same transaction; any insert failure rolls back the claimed mutation. Minimum validation must verify committed database state, not helper invocation."
+      }
+    ],
+    "blockers": [
+      "No target execution is approved. Combined scratch-only writes and aggregate process-tree CPU/memory/PID/disk limits are not established, so the complete offline application/PostgreSQL transaction cannot be exercised. Promotion allowlist is empty with zero byte limits; no target-produced runtime evidence can be retained. Cross-tenant committed mutation remains unobserved.",
+      "Foreign warehouse/item UUID knowledge is a prerequisite, not a demonstrated discovery capability. Actual deployment-only DB policies or triggers are unobserved; reviewed schema/migrations provide no tenant-composite ownership enforcement and DESIGN explicitly excludes RLS in v1."
+    ],
+    "validation_plan": {
+      "local": "Parent must first provision an offline OS-enforced sandbox with empty allowlisted environment, read-only source/tools, scratch-only writes, aggregate CPU/memory/PID/disk/file-size and wall-clock bounds, plus an explicit bounded artifact allowlist and trusted promotion. Use disposable PostgreSQL and the real application/migrations, never mocks/shared DB. Seed A and B, an enabled A staff user with valid live session/membership, growth active plan and A outlet/default warehouse; seed B ingredient/warehouse with qtyOnHand=2, qtyReserved=0 and avgUnitCost=1. Using only dummy token/UUIDs, send one POST /api/v1/wastes with X-Outlet-Id=A outlet and a valid UUID X-Request-Id, body {warehouseId:B warehouse UUID,itemType:ingredient,itemId:B ingredient UUID,qty:1,uom:pcs,reason:damaged}. Inspect committed B balance (expected hypothesis: 1), A waste/movement (expected: one each referencing B warehouse), and A metrics, and verify B ownership columns remain B. Stop after this minimum effect; if any step fails, record actual rollback/error rather than success. In separate reset fixtures validate /inventory/adjustments with direction=out and the UUID request header, and /opnames with physicalQty=1 followed by A owner/admin approval; staff-only approval must fail. After the ownership fix, require 404 and unchanged balances/logs/metrics for each foreign reference; retain legitimate A and omitted-default regression cases.",
+      "deployment": "Owner should inspect effective DB role grants, RLS and triggers for inventory_balances, stock_movements, waste_logs and stock_opnames without reading secrets or changing production data. If additional deployed isolation exists, reproduce its configuration only in an isolated disposable dummy-tenant sandbox; do not probe deployed endpoints. No production mutation is required."
+    },
+    "verdict": "needs_validation"
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "commerce/cashierStaffId/unbound-staff-reference",
+    "title": "Caller-selected foreign staff references may disclose staff names through sales and shifts",
+    "description": "Source review supports, but does not dynamically demonstrate, an organization A member attaching a known organization B staff UUID to an A sale or cash shift and receiving B staff.name. This changes attribution in A-owned records; it does not establish mutation of B staff, B sales, B shifts or payroll. Live-session authentication and tenant-scoped parent selectors do not validate the explicitly supplied staff reference. UUID knowledge is a prerequisite; no discovery mechanism is established. No comparable baseline was supplied and no severity is assigned.",
+    "claimed_root_cause": "Sales and shift creation accept a UUID-shaped cashierStaffId without checking staff.organizationId, outletId, isActive or deletedAt. The explicit selector overrides the tenant-scoped authenticated/fallback staff identity. Single-column staff foreign keys enforce existence, not tenant binding. Subsequent sales lookup and shift join resolve staff names by ID alone. Tenant binding is explicitly required by PRD.md:124-125; outlet/lifecycle validation is appropriate defense but its precise business policy should be agreed before treating every inactive or historical reference as independently unauthorized.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "salesRouter.post('/')",
+        "description": "Authenticated outlet-context POST accepts caller JSON, parses createSaleSchema and returns createSale output; a UUID Idempotency-Key is required."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.schemas.ts",
+        "line": 9,
+        "scope": "createSaleSchema",
+        "description": "cashierStaffId is optional and checked only for UUID syntax."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 305,
+        "scope": "createSale",
+        "description": "The caller-selected staff UUID takes precedence over ctx.staffId in the sale insert. Warehouse, products and stock are checked separately, without a staff ownership check."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 119,
+        "scope": "getCashierDetails",
+        "description": "Reads staff.id and staff.name by staff ID alone; returns name and resolved staffId without organization, outlet or lifecycle predicates."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 402,
+        "scope": "createSale response",
+        "description": "The cashier value resolved after transaction commit is included in the response returned by the HTTP route."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "PRD.md",
+        "line": 124,
+        "description": "Tenant-owned queries must filter organization; line 125 makes sales and shifts outlet-scoped."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Reloads unrevoked session, enabled user and organization membership; lines 55-79 build outlet context and tenant-scoped linked staff. These checks do not bind a body-supplied cashierStaffId."
+      },
+      {
+        "file": "src/middleware/requireOutlet.ts",
+        "line": 5,
+        "description": "Requires a nonempty active outlet only; performs no staff-reference validation."
+      },
+      {
+        "file": "src/middleware/idempotency.ts",
+        "line": 54,
+        "description": "Replay cache lookup binds organization, user, method, path and key; this prevents unrelated cached responses but does not validate staff ownership on a fresh request."
+      },
+      {
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 40,
+        "description": "Open shift lookup always filters organization and outlet, and may fall back to any open A shift. A foreign staff selector does not select a B shift and no open shift is required to persist a sale."
+      },
+      {
+        "file": "src/modules/sales/sales.repo.ts",
+        "line": 143,
+        "description": "Sale list is tenant/outlet scoped; detail likewise uses both at lines 217-225. These parent predicates do not constrain getCashierDetails."
+      },
+      {
+        "file": "src/modules/pos/pos.schemas.ts",
+        "line": 15,
+        "description": "POS accepts the same optional UUID cashierStaffId; pos.service.ts:11-12 forwards input to the same createSale service."
+      },
+      {
+        "file": "src/modules/shifts/shifts.routes.ts",
+        "line": 42,
+        "description": "Shift open requires authentication, an outlet and owner/admin/staff authorization, then parses openShiftSchema. Listing at lines 24-35 returns repository cashierStaffName."
+      },
+      {
+        "file": "src/modules/shifts/shifts.schemas.ts",
+        "line": 6,
+        "description": "Shift open accepts optional UUID cashierStaffId; staffId is not a declared HTTP schema field, so the service body.staffId alias is not needed for this trace."
+      },
+      {
+        "file": "src/modules/shifts/shifts.service.ts",
+        "line": 34,
+        "description": "An explicit cashierStaffId bypasses tenant-scoped getByUserId fallback. An existing open A outlet shift causes rejection at lines 25-31; otherwise lines 44-50 pass the selected ID to creation."
+      },
+      {
+        "file": "src/modules/shifts/shifts.repo.ts",
+        "line": 52,
+        "description": "Listing filters cashShifts organization/outlet, but joins staff on ID alone and selects staff.name as cashierStaffName at line 48. Creation at lines 76-83 inserts organization/outlet from trusted context with the supplied staffId."
+      },
+      {
+        "file": "src/db/schema/sales.ts",
+        "line": 25,
+        "description": "cashierStaffId references staff.id only; there is no composite tenant-binding constraint in this table definition."
+      },
+      {
+        "file": "src/db/schema/staff.ts",
+        "line": 46,
+        "description": "cashShifts.staffId is a required single-ID foreign key; staff itself has organization/outlet plus isActive and deletedAt fields at lines 9-27."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 861,
+        "description": "Generated shift staff foreign key references public.staff(id) alone; sale staff foreign key does the same at line 933. No RLS policy or trigger enforcing staff tenant binding was found in reviewed migrations."
+      },
+      {
+        "file": "tests/sales-stock.test.ts",
+        "line": 161,
+        "description": "Existing stock test substitutes the transaction result and mocks getCashierDetails at line 199; it cannot establish actual staff isolation or database enforcement."
+      }
+    ],
+    "blockers": [
+      "No target execution is authorized: combined OS-enforced scratch-only writes and aggregate process-tree CPU, memory, PID and disk limits have not been established. Consequently no isolated two-tenant HTTP/PostgreSQL integration result exists. The artifact promotion allowlist is empty with zero byte limits, so no target-generated result could be retained as evidence in this assignment.",
+      "Actual database enforcement and API behavior remain unobserved: an owner-controlled isolated fixture must establish whether any out-of-repository RLS, trigger or database role prevents the cross-tenant reference or staff-name lookup. Source does not refute the path.",
+      "A caller must already possess a valid foreign staff UUID. This is an exploit precondition rather than a demonstrated UUID-discovery vulnerability."
+    ],
+    "validation_plan": {
+      "local": "Only after the parent supplies the complete approved no-network sandbox and a bounded artifact-promotion allowlist, use an isolated disposable PostgreSQL fixture with dummy organizations A/B, an enabled A member/session, A outlet/warehouse, an active A finished-good product with stock >=1, and B staff with a unique non-sensitive marker name. With A authentication and A X-Outlet-Id, POST /api/v1/sales using a fresh UUID Idempotency-Key and body {orderType:dine_in,paymentMethod:cash,items:[{productId:<A product UUID>,qty:1}],cashierStaffId:<B staff UUID>}; inspect only the created A sale attribution and response data.cashier.name. Independently, with no open shift in A outlet, POST /api/v1/shifts/open {startingCashIdr:0,cashierStaffId:<B staff UUID>}, then GET /api/v1/shifts?page=1&limit=1 and inspect only the created shift staffId and data[0].cashierStaffName. Stop at the first marker disclosure per path; verify B staff is unchanged. Repeat with an A staff positive control and a nonexistent UUID negative control. If repaired, assert foreign references reject before any insert; resolve staff with organization/outlet and agreed active/deleted policy at creation and tenant-bound name lookup, with shared-service regression coverage for POS. Do not impose active-only name resolution on historical records without an explicit retention policy.",
+      "deployment": "Owner should inspect only an isolated staging clone with dummy tenants using the application database role and deployed migrations, verifying any additional staff RLS/tenant trigger and whether it rejects the foreign reference or suppresses the marker name. Report request shape, status, dummy row ownership and marker presence only; do not probe production, enumerate real UUIDs, expose credentials or use real staff data."
+    }
+  }
+}

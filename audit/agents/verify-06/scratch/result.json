@@ -1,0 +1,139 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "idempotency/requireIdempotencyKey/postcommit-unreserved-key",
+    "title": "Unreserved idempotency keys may allow concurrent duplicate sale commits",
+    "description": "Source supports, but this review did not execute, a race in which an authenticated organization member submits two identical valid sale requests with the same unexpired-scope UUID key, user, organization, method and original URL. Both must finish the empty cache lookup before either response cache write. Each can then enter a separate sale transaction; with sufficient stock for both, the apparent consequence is duplicate paid sale records, stock deductions and financial aggregates in that member's organization/outlet, contrary to the documented one-row double-submit invariant. This is not evidence of cross-tenant access, external payment charging, or an observed duplicate commit. Existing authentication, outlet context, schema validation, transactional numbering, stock locks and database uniqueness do not visibly couple the logical request key to the sale commit.",
+    "claimed_root_cause": "requireIdempotencyKey performs an unlocked response-cache read and passes cache misses onward without an atomic reservation. Sale creation receives no idempotency identity and commits independently. The response hook subsequently starts a separate, unawaited cache insert and discards its errors; cache-row uniqueness cannot roll back an already committed sale or replay the winning result to the losing in-flight request.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/sales/sales.routes.ts",
+        "line": 12,
+        "scope": "POST /api/v1/sales and POST /api/sales",
+        "description": "Caller-controlled JSON and Idempotency-Key reach the middleware after authenticate and requireOutlet; the handler then parses createSaleSchema and awaits createSale before sending HTTP 201."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/idempotency.ts",
+        "line": 50,
+        "scope": "requireIdempotencyKey cache lookup",
+        "description": "Reads an unexpired row scoped by organization, user, method, original URL and key. An existing matching body hash replays; a mismatched hash returns 409. No key reservation is made on a miss."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/middleware/idempotency.ts",
+        "line": 83,
+        "scope": "response hook installation and next()",
+        "description": "Installs a hook that inserts a successful response into the cache separately at lines 87-101 and ignores insert errors, then calls next at line 106 without any in-flight key ownership. The sales handler invokes this hook only after createSale returns."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 88,
+        "scope": "createSale transaction",
+        "description": "Starts a business transaction with generated document numbering and stock locking. Neither the transaction nor its input carries the idempotency key or checks the response cache again after serialization."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 297,
+        "scope": "paid sale insertion",
+        "description": "Inserts a new sale with generated noNota and paid status, followed by sale items and stock movements; the transaction also increments an attached cash shift and upserts daily metrics."
+      },
+      {
+        "kind": "sink",
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 390,
+        "scope": "business transaction completion",
+        "description": "The awaited transaction completes independently of response-cache persistence. If both admitted transactions succeed, each commits its own paid sale and stock/aggregate effects before the route's response hook attempts cache insertion. Actual concurrent duplicate commits remain unobserved."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1653,
+        "description": "Explicit acceptance invariant: double POST sale with the same Idempotency-Key produces one row."
+      },
+      {
+        "file": "PRD.md",
+        "line": 765,
+        "description": "Defines organization/user/method/path/key scope, body hash, stored-response replay and differing-payload conflict. The proposed check keeps this entire scope and body identical."
+      },
+      {
+        "file": "DESIGN.md",
+        "line": 1163,
+        "description": "Requires UUID keys, 24-hour TTL and catch-and-replay on a uniqueness race. The middleware instead ignores cache-insert failures. The design sequence at lines 295-307 itself places cache persistence after business COMMIT, so that diagram is not evidence of atomic protection."
+      },
+      {
+        "file": "src/middleware/authenticate.ts",
+        "line": 22,
+        "description": "Authentication reloads an unrevoked session, enabled user and organization membership, then builds organization and outlet context; the candidate requires an already admitted organization member, not an anonymous caller."
+      },
+      {
+        "file": "src/modules/sales/sales.schemas.ts",
+        "line": 3,
+        "description": "Sale input requires recognized order/payment enums, UUID product references, positive quantities and nonnegative integer monetary inputs. A valid finished-good fixture avoids recipe dependencies."
+      },
+      {
+        "file": "src/db/schema/ops.ts",
+        "line": 19,
+        "description": "The unique organization/user/method/path/key index protects only idempotency_keys rows; response status/body are required and no pending ownership state is declared. The uniqueness constraint is not inside createSale's transaction."
+      },
+      {
+        "file": "src/db/schema/sales.ts",
+        "line": 41,
+        "description": "Sale uniqueness covers organization/outlet/document number, not an idempotency identity; the table declares no logical-request key."
+      },
+      {
+        "file": "src/lib/documentNo.ts",
+        "line": 14,
+        "description": "The transactionally upserted counter increments on organization/outlet/kind/day conflict and returns a new sequence. It serializes same-outlet/day sale transactions but does not reject a second request or recheck its idempotency key."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 211,
+        "description": "Finished-good balance reads use FOR UPDATE and recheck available stock before deduction. Insufficient stock can stop the second sale, so reproduction must preseed an existing balance sufficient for both requests. These locks protect stock availability, not logical-request uniqueness."
+      },
+      {
+        "file": "src/db/schema/inventory.ts",
+        "line": 27,
+        "description": "Warehouse/item balance uniqueness and nonnegative/on-hand-versus-reserved checks constrain stock integrity but do not prevent two valid deductions with sufficient stock."
+      },
+      {
+        "file": "src/modules/sales/sales.service.ts",
+        "line": 367,
+        "description": "Daily metrics use an outlet/date unique-key upsert that adds totals and increments transaction count, rather than rejecting a duplicate logical sale. Cash-shift totals similarly increment at lines 348-363."
+      },
+      {
+        "file": "drizzle/migrations/0000_ambiguous_silver_fox.sql",
+        "line": 1030,
+        "description": "Migration declares the response-cache scope unique index separately from the document-counter, sale-number and daily-metrics indexes at lines 1021-1029; the reviewed migration SQL adds no idempotency reservation trigger."
+      },
+      {
+        "file": "tests/pos-idempotency.test.ts",
+        "line": 42,
+        "description": "The double-submit-named test mocks an already populated cache and calls only the middleware once. It checks replay behavior, not concurrent empty-cache admission, business transactions or stock effects."
+      },
+      {
+        "file": "src/modules/pos/pos.routes.ts",
+        "line": 44,
+        "description": "POS sale submission also uses requireIdempotencyKey; pos.service.ts lines 11-12 delegates directly to the same createSale implementation."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 78,
+        "description": "Mounts the sales router; lines 89-94 mount POS and expose the same router under /api/v1 and /api. The proposed concurrent check uses one exact URL, not different aliases."
+      }
+    ],
+    "blockers": [
+      "No target-controlled execution is approved. Combined OS-enforced scratch-only writes and aggregate process-tree CPU, memory, PID and disk limits are not established; no approved isolated disposable PostgreSQL fixture is available. Therefore concurrent transaction outcomes and post-commit cache behavior were not independently reproduced.",
+      "Execution-evidence promotion is unavailable for this assignment: the parent promotion allowlist is empty and byte limits are zero. No execution artifact can be relied upon without a new parent-approved sandbox and bounded promotion declaration."
+    ],
+    "validation_plan": {
+      "local": "After the parent provisions the complete approved sandbox and promotion procedure, use an isolated disposable PostgreSQL database initialized from the reviewed migrations and dummy fixtures: one organization member/session, one outlet/default warehouse, one active finished-good product, an existing unreserved stock balance of quantity 10, and one open cash shift. Use a positive unit price of 10000, quantity 1, cash payment, zero tax/discount, and identical JSON bodies, UUID key, member, outlet and exact POST /api/v1/sales URL. Place a test-only barrier immediately after each of two empty cache SELECT results, release both, and await both handlers and background cache writes. Read committed sales, item rows, stock-movement count/quantity, stock balance, shift cash total, daily transaction count/net total and scoped cache-row count from the disposable database. Stop after this pair: the intended result is one sale, one unit deducted and one aggregate increment; the hypothesized failure is two distinct paid sales/document numbers, two units deducted and doubled aggregates despite at most one cached response. Do not assume movement refId remains attached correctly; count and sum movements within the isolated fixture because createSale rewrites same-actor movement references. Optionally in a separate reset fixture deny only cache insertion, submit one sale then retry once, and inspect whether failure to persist the key permits another sale. A prospective fix should atomically reserve the scoped key and commit its replayable result with the sale transaction; rerun the same bounded pair and rollback/retry tests to verify exactly one effect.",
+      "deployment": "No deployed endpoint or shared database probing is needed or permitted. The owner should compare the running release's sale/idempotency source, applied constraints, transaction behavior and any gateway duplicate-request serialization with the reviewed path using read-only configuration evidence without secrets. If deployment-only serialization is claimed as mitigation, establish that it applies across every worker and both API mount aliases; validate behavior only in the isolated disposable fixture."
+    }
+  }
+}

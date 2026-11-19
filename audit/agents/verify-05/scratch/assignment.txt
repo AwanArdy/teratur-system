@@ -1,0 +1,231 @@
+You did not write this candidate. Try to refute it from repository source and bounded
+local evidence. Do not contact deployed endpoints or external/shared services. Run
+target-controlled code only inside the approved OS-enforced sandbox: no external
+network, empty allowlisted environment, read-only target and tools, scratch-only
+writes, and explicit low resource and wall-clock limits. If any control is unavailable,
+do not execute; retain the exact missing capability as a needs_validation blocker.
+Treat every scratch entry as target-controlled after execution. After the sandbox and
+all its processes terminate, only trusted parent-side code may promote a predeclared
+scratch-relative file, following the promotion procedure block included verbatim in
+this prompt. You and target code never write retained artifacts. If promotion is
+unavailable or fails, do not use that file as evidence.
+
+1. Verify every trace and evidence file, positive line number, scope, and description.
+   Confirm the first entry is a real lower-trust entrypoint and the last is the
+   claimed sink or boundary effect.
+2. Reconstruct the strongest source-visible validation, identity, authorization,
+   normalization, lifecycle, framework, and containment controls on the path.
+   Where the architecture summary names a comparable baseline, note whether it
+   shares the pattern — as calibration, never as grounds to dismiss.
+3. For a proposed confirmed candidate, independently reproduce the minimum observed
+   result when possible. Verify inputs, interface shape, conditions, and affected
+   dummy principal/resource. Do not infer a stronger result or continue after it.
+4. Verify that likelihood, impact, confidence, and the proposed source fix match only
+   what the evidence establishes.
+5. For a proposed needs_validation candidate, decide whether the blocker is genuinely
+   outside source/local observation. If source refutes the trace, reject it. If the
+   missing fact remains decisive, keep needs_validation and make the local and
+   owner-observed plans exact and non-destructive.
+6. Preserve the fingerprint for the same source-derived root cause across every state.
+
+Return exactly one JSON object and no surrounding prose:
+{"decision": "confirmed|needs_validation|rejected", "record": { ... }}
+where record exactly matches the decision's verdict branch of the schema included
+in this prompt. A corrected record replaces the hunter's wording.
+```
+
+Copy this promotion procedure verbatim into every candidate-verifier prompt:
+
+```text
+Artifact promotion procedure (trusted parent-side code only):
+Reference only for you: the parent performs these steps; you never perform them.
+
+Before execution, the parent opens and retains trusted, non-inheritable directory
+descriptors for the agent's scratch/ and artifacts/ roots, and records an allowlist
+of expected scratch-relative artifact files plus explicit per-file and cumulative
+byte limits. Never pass those descriptors to the agent or sandbox. After the sandbox
+and all its processes terminate, trusted parent-side code promotes each allowlisted
+file separately:
+
+1. Validate the declared relative path: reject absolute, empty, `.`, `..`, or
+   symlinked components.
+2. Walk each parent component from the retained scratch-root descriptor with
+   no-follow directory-relative operations; never reopen by path.
+3. Open the leaf no-follow and nonblocking.
+4. Verify with `fstat` that it is a regular file with link count exactly one and
+   within the recorded per-file and cumulative byte limits.
+5. Enforce those limits again while reading from that descriptor.
+6. Copy exactly the verified size, repeat `fstat`, and reject a changed identity,
+   type, link count, or size.
+7. For the destination, walk every parent component from the retained
+   artifacts-root descriptor with no-follow directory-relative operations; require
+   each existing component to be a real directory, and create any missing directory
+   exclusively before reopening and verifying it no-follow.
+8. Create the leaf exclusively without following links, verify that the opened
+   destination is a regular file with link count exactly one, and copy from the
+   verified source descriptor without reopening either path.
+9. Use equivalent race-safe APIs on non-POSIX systems.
+10. Never recursively copy or glob scratch, extract an archive into artifacts, or
+    open or promote a symlink, FIFO, socket, device, directory, hard-linked file,
+    changing file, or file that exceeds its bound.
+11. If any check is unavailable, cannot be enforced, or fails, discard the scratch
+    entry; if it is decisive evidence, retain `needs_validation` with the exact
+    promotion blocker.
+```
+
+
+ARCHITECTURE
+# Architecture and audit scope
+
+TERATUR-ID backend is a multi-tenant Indonesian F&B operations API. Node/TypeScript Express 5 and Drizzle/postgres-js handle identities, organizations, outlets, catalogs, inventory, POS/sales, expenses, workforce/payroll, reports and optional AI advisor forwarding. Both /api/v1 and /api mount the same router (src/app.ts:67-94).
+
+Principals are anonymous callers, organization owner/admin/staff, optional linked staff records, backend DB service, and an optional external RAG service. Protected resources include identity/session capabilities, other organizations' data, outlet operations, employment/payroll information, financial/inventory integrity and paid service entitlements. Authentication reloads live sessions, users and memberships (src/middleware/authenticate.ts:9-82). Organization roles and plans have separate middleware. Outlet context currently loads all organization outlets; PRD outlet assignment policy needs careful comparison rather than assumed correctness.
+
+Public identity flows include onboarding/OTP, login, refresh, reset and logout. Entry inputs include JSON, path/query selectors, Bearer and outlet/idempotency headers. Sensitive flows include foreign-object references into catalog/staff/warehouse resources; concurrent sale/cancel, transfer/receipt, stock approval and shift close; report/AI copies and exports; subscription selection; and credential logging. Role policy must be established from source requirements, not assumed from missing middleware.
+
+Source deployment is a PostgreSQL-only Compose service plus documented build/start. Runtime configuration controls signing material, DB, CORS and optional RAG forwarding. Production ingress/TLS, DB policies, billing integration, log readership and downstream RAG policies are unobserved. Do not probe any deployed service. No meaningful comparable baseline was established.
+
+Read-only reconnaissance covered all modules, schemas, tests and manifests. npm run build and npm test require existing dependencies; tests mock important boundaries and do not prove actual DB isolation. No target-controlled execution is approved: OS primitives exist, but combined scratch-only writes and aggregate process-tree CPU/memory/PID/disk limits are not established. Do not run builds, tests, harnesses, application imports or target validators outside the required sandbox. Source-grounded candidates therefore remain needs_validation unless independently bounded execution becomes possible. Do not install dependencies or read credential files. Do not emit literal embedded credential values.
+
+Full repository source scope includes src, tests, migrations, manifests, docs, tracked generated Drizzle config and the untracked docker-compose.yml. Source revision 01addef3622c31cedce58382572573170505844a on main; untracked Compose makes the reviewed worktree dirty. No prior coverage ledger/findings found in audit or ~/security-audit-skill. Reports are in locally ignored audit/; parent is sole writer of shared artifacts.
+
+Companions: WEB-PROTOCOL-AND-AUTH for HTTP/session/account transitions; DATA-ISOLATION-AND-LIFECYCLE for tenant/object, analytics/export/deletion boundaries; RESOURCE-EXHAUSTION-AND-AVAILABILITY for public hashing and shared DB/RAG work; AI-AND-LLM for retrieval/context/output (no tool execution established); CLOUD-AND-DEPLOYMENT for runtime config and Compose; SUPPLY-CHAIN-AND-RELEASE for local manifests/build inputs. No native memory, browser DOM, local IPC, federated identity, MCP or message-broker boundary is source-established. Do not assert current CVEs without an authoritative available advisory; network dependency audits are outside this run.
+
+CANDIDATE
+{
+  "proposed_verdict": "needs_validation",
+  "fingerprint": "dashboard/derived-analytics/missing-plan-projection",
+  "title": "Starter owners receive Growth-only derived analytics through dashboard and AI context",
+  "description": "An authenticated owner of an active Starter organization is authorized for their own business data but not every paid feature. GET /api/v1/dashboard returns SKU margin reporting, expense-inclusive nett KPIs and waste percentage without evaluating the subscription. Its monthly chart also includes opex. GET /api/v1/ai/context is an alternate direct delivery of expense-inclusive nett profit; POST /api/v1/ai/advisor builds the same context and, with RAG unset, returns it as forwardPayload. The /api aliases share these routes. This is paid-feature parity failure, not a staff-role bypass or access to another tenant. Expense-inclusive and waste numerical differentiation requires nonzero metrics; supplier-master access is a separate candidate.",
+  "claimed_root_cause": "Derived analytics are assembled with organization/outlet identifiers but without a plan-aware feature projection. Billing's Growth entitlement is informational only, while dashboard and AI context compute and return premium outputs unconditionally.",
+  "trace": [
+    {
+      "kind": "entrypoint",
+      "file": "src/modules/dashboard/dashboard.routes.ts",
+      "line": 9,
+      "scope": "GET /dashboard",
+      "description": "Authenticated Starter owner can request the dashboard; no Growth gate is installed."
+    },
+    {
+      "kind": "propagation",
+      "file": "src/middleware/authenticate.ts",
+      "line": 71,
+      "scope": "request context",
+      "description": "Live planCode is available in request context, but authentication itself admits Starter."
+    },
+    {
+      "kind": "propagation",
+      "file": "src/modules/dashboard/dashboard.routes.ts",
+      "line": 14,
+      "scope": "dashboard service invocation",
+      "description": "Only organizationId, outletId and query are passed, discarding the available plan context."
+    },
+    {
+      "kind": "propagation",
+      "file": "src/modules/dashboard/dashboard.repo.ts",
+      "line": 103,
+      "scope": "getMenuPerformance",
+      "description": "Paid-sale lines yield per-menu price, COGS and gross-profit aggregates, without a plan predicate."
+    },
+    {
+      "kind": "sink",
+      "file": "src/modules/dashboard/dashboard.service.ts",
+      "line": 80,
+      "scope": "dashboard response",
+      "description": "Returns nettProfitIdr, nettMarginPct, wastePct, monthly expense-inclusive profit and menuPerformance with marginPct for every plan."
+    }
+  ],
+  "evidence": [
+    {
+      "file": "PRD.md",
+      "line": 634,
+      "description": "Supplier master and SKU margin report are Growth features; Starter gets basic supplier string."
+    },
+    {
+      "file": "PRD.md",
+      "line": 635,
+      "description": "Starter nett KPI is revenue minus COGS; operating-expense-inclusive profit starts at Growth."
+    },
+    {
+      "file": "PRD.md",
+      "line": 640,
+      "description": "Starter basic COGS explicitly excludes waste percentage and ROP."
+    },
+    {
+      "file": "src/modules/billing/billing.service.ts",
+      "line": 32,
+      "description": "nettProfitIncludesOpex is false below Growth, establishing a source-visible sibling entitlement."
+    },
+    {
+      "file": "src/modules/dashboard/dashboard.service.ts",
+      "line": 31,
+      "description": "Unconditionally subtracts opex and calculates waste percentage; lines 66-75 calculate per-menu margin and lines 87-100 expose the results."
+    },
+    {
+      "file": "src/modules/dashboard/dashboard.repo.ts",
+      "line": 55,
+      "description": "Monthly chart profit subtracts opex without knowing the plan, an additional copy requiring the same entitlement projection."
+    },
+    {
+      "file": "src/modules/ai/ai.routes.ts",
+      "line": 51,
+      "description": "Direct /context response requires authentication but passes no plan to getAggregatedContext and returns the result."
+    },
+    {
+      "file": "src/modules/ai/ai.repo.ts",
+      "line": 95,
+      "description": "Computes grossProfit minus opex and returns nettProfitIdr and nettMarginPct at lines 105-106 independent of plan."
+    },
+    {
+      "file": "src/modules/ai/ai.service.ts",
+      "line": 19,
+      "description": "Legacy advisor builds the unfiltered business context and returns it as forwardPayload at lines 39-43 if RAG is unset; no downstream RAG assumption is needed for /context."
+    },
+    {
+      "file": "src/modules/reports/reports.service.ts",
+      "line": 139,
+      "description": "Strongest relevant sibling control: planAllowsRop(ctx.planCode) suppresses Starter ROP, with no calculated reorder quantity when ROP is null."
+    },
+    {
+      "file": "src/modules/wastes/wastes.routes.ts",
+      "line": 12,
+      "description": "Primary waste workflow independently enforces requirePlan('growth'); dashboard does not inherit that gate."
+    },
+    {
+      "file": "src/db/schema/ops.ts",
+      "line": 65,
+      "description": "Opex and waste daily-metric fields default to zero. Reviewed expense creation does not populate them, so nonzero numeric impact is a validation dependency rather than an assumed fact."
+    }
+  ],
+  "blockers": [
+    "No approved sandbox with network isolation, allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk/time limits is available; target execution is prohibited.",
+    "No local HTTP/service result demonstrates Starter versus Growth output. Nonzero daily_metrics opex/waste producer or downgraded populated history is not established; a zero-only deployment would mask these two numerical effects, though the margin-report path uses paid sale lines directly."
+  ],
+  "validation_plan": {
+    "local": "Under a parent-approved bounded sandbox, use dummy Starter and Growth owner sessions and fixture paid sale lines with distinct price/COGS. Seed explicit dummy daily metrics with nonzero revenue, COGS, opex and waste to isolate projection behavior. Compare dashboard KPIs, chart, menuPerformance, /ai/context and unset-RAG /ai/advisor. Starter must retain revenue/COGS and gross-profit basics but not expense-inclusive nett, waste percentage or SKU margin-report outputs; Growth retains them. Assert /reports/stock has rop=null and reorderQty=0 for Starter, not a blanket denial of basic stock reporting. Mock or disable all external RAG calls.",
+    "deployment": "Owner review only: identify the actual daily_metrics aggregation producer and whether nonzero opex/waste can exist for a Starter tenant, including downgrade behavior. Do not infer such a producer or billing transition from the response schema alone. No deployed probing is requested."
+  }
+}
+LINKED UNIT CHECKS
+[{"coverage_id": "src%2Fmodules%2Fdashboard::plan-restricted%20derived%20features%20and%20supplier%20master::src%2Fmodules%2Fdashboard::ATTACK-CLASSES.md%23Business%20logic", "local_checks": [{"agent_id": "hunt-featureplans", "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/requirePlan.ts", "src/modules/dashboard/dashboard.routes.ts", "src/modules/dashboard/dashboard.service.ts", "src/modules/dashboard/dashboard.repo.ts", "src/modules/reports/reports.routes.ts", "src/modules/reports/reports.service.ts", "src/modules/ai/ai.routes.ts", "src/modules/ai/ai.service.ts", "src/modules/ai/ai.repo.ts", "src/modules/billing/billing.routes.ts", "src/modules/billing/billing.service.ts", "src/modules/wastes/wastes.routes.ts", "src/db/schema/ops.ts", "src/modules/expenses/expenses.service.ts"], "invariant": "A Starter organization owner may use basic COGS, sales reports, inventory and AI, but must not receive explicitly Growth-gated SKU margin reporting, expense-inclusive nett profit or waste percentage through alternate derived-data delivery paths.", "method": "source", "result": "PRD.md:628-640 and 681 distinguish basic COGS from gated analytics. Authentication loads the live plan at authenticate.ts:50-81 but does not enforce entitlements. Billing advertises nettProfitIncludesOpex=false for Starter at billing.service.ts:16-32. Dashboard receives no plan argument and unconditionally returns expense-inclusive profit, wastePct and menuPerformance.marginPct; its chart also subtracts opex. AI /context directly returns expense-inclusive nett KPIs, and /advisor uses the same unfiltered context, including returning forwardPayload when RAG is unset. AI chat itself emits basic stock, revenue and generic bundling advice, not a demonstrated numeric premium margin report. Reports correctly set rop=null and reorderQty=0 for Starter/free_trial using the live plan. Reports still expose basic stock quantities, supplierName string, costs and dailyUsage: these are not claimed as a demonstrated ROP bypass merely because a client could calculate ROP. Waste routes separately require Growth. No cross-role or cross-tenant claim is made. Nonzero daily_metrics opex/waste lineage is not established by the reviewed expense service; numeric-effect validation needs fixtures and, for practical nonzero opex/waste, an owner-observed aggregation source or downgrade history.", "artifact": null}, {"agent_id": "hunt-featureplans", "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requirePlan.ts", "src/modules/suppliers/suppliers.routes.ts", "src/modules/suppliers/suppliers.service.ts", "src/modules/suppliers/suppliers.repo.ts", "src/modules/suppliers/suppliers.schemas.ts"], "invariant": "An authenticated Starter owner retains owner role authority but receives only a basic supplier string, not Growth supplier-master CRUD.", "method": "source", "result": "PRD.md:634 restricts supplier master to Growth+. The globally mounted supplier router authenticates and allows owner/admin mutations, but never invokes requirePlan. Its services accept only organizationId and pass to tenant-scoped persistent supplier CRUD. authorize correctly admits the owner; it is not the missing control. Unlike the supported basic ingredient supplierName string, the supplier master persists separate records with contact email, phone and notes. No outer mount, service or repository plan check prevents the Starter-owner path.", "artifact": null}]}]
+VALIDATION BLOCKS
+## Validation rules (apply before reporting ANY finding here)
+
+1. Name attacker or lower-trust principal, protected data/state, affected owner/tenant, alternate copy or operation, and unauthorized disclosure or mutation.
+2. Cite both intended source-of-truth policy and the path that omits or disagrees with it. Confirm another layer does not enforce the same tenant/lifecycle condition.
+3. Use local dummy tenants and non-sensitive fixtures to prove cross-scope access or stale lifecycle behavior. Stop at the minimum observable record or operation.
+4. If external cache, object storage, replicas, analytics, backup, or retention policy is required, classify `needs_validation` and state the owner-observed check.
+5. Return `confirmed` only with complete lineage and concrete boundary impact. Return `needs_validation` with the exact unresolved storage, ACL, invalidation, retention, or restore fact.
+
+## Validation rules (apply before reporting ANY finding here)
+
+1. Name untrusted input, requester work, service amplification or retained resource, shared blast radius, and recovery. Missing limits without concrete shared impact are hardening.
+2. Confirm no source-visible upstream, parser, queue, tenant, or framework bound prevents the path. Unknown deployed controls require `needs_validation`.
+3. For superlinear behavior, establish the accepted complexity and bounded local growth. For leaks, show repeatable retention after cleanup should occur. For fatal paths, identify process/supervisor isolation.
+4. Prioritize by low requester work, unauthenticated reachability, cross-tenant scope, persistence, and poor recovery; do not validate with availability impact.
+5. Return `confirmed` only with safe local proof and meaningful shared effect. Return `needs_validation` with the exact upstream limit, topology, quota, or recovery observation an owner must check.
+
+
+SCHEMA
+[{"type": "object", "description": "A source-grounded vulnerability that was independently demonstrated.", "properties": {"verdict": {"type": "string", "const": "confirmed"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$", "description": "A stable source-derived identifier that does not change between validation states."}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "intended_behavior": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "conditions": {"type": "array", "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["authentication_level", "authorization_role", "user_interaction", "system_configuration", "network_routing", "environmental_dependency", "data_state", "timing_dependency", "third_party_dependency"]}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "description"], "additionalProperties": false}}, "execution": {"type": "object", "description": "Target-neutral reproduction in the target's native interface.", "properties": {"attacker_perspective": {"type": "string", "minLength": 1, "visibleContent": true}, "payloads": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}}, "instructions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "observed_result": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["attacker_perspective", "payloads", "instructions", "observed_result"], "additionalProperties": false}, "remediation": {"type": "object", "properties": {"strategy": {"type": "string", "minLength": 1, "visibleContent": true}, "code_changes": {"type": "array", "items": {"type": "object", "properties": {"file_name": {"type": "string", "minLength": 1}, "fixed_code": {"type": "string"}}, "required": ["file_name", "fixed_code"], "additionalProperties": false}}}, "required": ["strategy"], "additionalProperties": false}, "severity": {"type": "object", "properties": {"likelihood": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "impact": {"type": "object", "properties": {"score": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}, "overall_severity": {"type": "string", "enum": ["informational", "low", "medium", "high", "critical"]}}, "required": ["likelihood", "impact", "overall_severity"], "additionalProperties": false}, "confidence": {"type": "object", "properties": {"score": {"type": "string", "enum": ["low", "medium", "high"]}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["score", "reason"], "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "root_cause", "intended_behavior", "trace", "evidence", "conditions", "execution", "remediation", "severity", "confidence"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate whose decisive validation is blocked.", "properties": {"verdict": {"type": "string", "const": "needs_validation"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "blockers": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "visibleContent": true}}, "validation_plan": {"type": "object", "properties": {"local": {"type": "string", "minLength": 1, "visibleContent": true}, "deployment": {"type": "string", "minLength": 1, "visibleContent": true}}, "additionalProperties": false}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "blockers", "validation_plan"], "additionalProperties": false}, {"type": "object", "description": "A source-grounded candidate refuted during validation.", "properties": {"verdict": {"type": "string", "const": "rejected"}, "fingerprint": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"}, "title": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}, "claimed_root_cause": {"type": "string", "minLength": 1, "visibleContent": true}, "trace": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["entrypoint", "propagation", "sink"]}, "file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "scope": {"type": "string", "minLength": 1, "visibleContent": true}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["kind", "file", "line", "scope", "description"], "additionalProperties": false}}, "evidence": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "object", "properties": {"file": {"type": "string", "minLength": 1}, "line": {"type": "integer", "minimum": 1}, "description": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["file", "line", "description"], "additionalProperties": false}}, "reason": {"type": "string", "minLength": 1, "visibleContent": true}}, "required": ["verdict", "fingerprint", "title", "description", "claimed_root_cause", "trace", "evidence", "reason"], "additionalProperties": false}]
+Agent ID verify-05; scratch /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-05/scratch; artifacts /home/ardy/Documents/projek/TERATUR-ID/backend/audit/agents/verify-05/artifacts. Promotion allowlist empty, byte limits 0. No approved full sandbox: NO TARGET EXECUTION including tests/imports/harnesses. No network, credential-file reads, secret literal output or source edits. You may only write own scratch. Re-read EVERY cited source path/line, try to refute it, independently decide needs_validation or rejected. No severity without bounded observed result. Save exact final JSON {decision,record} to own scratch/result.json then return same. Do not read any other verifier conclusions. Prior records: none.

@@ -1,0 +1,55 @@
+{
+  "units": [
+    {
+      "coverage_id": "src%2Fmodules%2Fstaff::per-plan%20staff%20allocation::src%2Fmodules%2Fstaff::ATTACK-CLASSES.md%23Business%20logic",
+      "disposition": "candidate",
+      "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requirePlan.ts", "src/modules/staff/staff.routes.ts", "src/modules/staff/staff.schemas.ts", "src/modules/staff/staff.service.ts", "src/modules/staff/staff.repo.ts", "src/modules/billing/billing.routes.ts", "src/modules/billing/billing.service.ts", "src/db/schema/staff.ts", "src/db/schema/identity.ts", "drizzle/migrations/0000_ambiguous_silver_fox.sql", "drizzle/migrations/0001_magical_rattler.sql", "drizzle/migrations/0002_young_alice.sql"],
+      "checks": [
+        {
+          "agent_id": "hunt-staffquota",
+          "reviewed_paths": ["PRD.md", "src/app.ts", "src/middleware/authenticate.ts", "src/middleware/authorize.ts", "src/middleware/requirePlan.ts", "src/modules/staff/staff.routes.ts", "src/modules/staff/staff.schemas.ts", "src/modules/staff/staff.service.ts", "src/modules/staff/staff.repo.ts", "src/modules/billing/billing.routes.ts", "src/modules/billing/billing.service.ts", "src/db/schema/staff.ts", "src/db/schema/identity.ts", "drizzle/migrations/0000_ambiguous_silver_fox.sql", "drizzle/migrations/0001_magical_rattler.sql", "drizzle/migrations/0002_young_alice.sql"],
+          "invariant": "Staff admission must enforce the plan allocation (trial/starter five; growth twenty-five), consistently across sequential creation, concurrent creation, billing metadata, and staff lifecycle transitions.",
+          "method": "source",
+          "result": "PRD.md:632 defines five and twenty-five. Both API prefixes reach the same POST /staff; authentication reloads subscription into context and owner/admin authorization is present, but neither schema, service nor insert reads a staff count or enforces a plan allowance. Billing reports five only for trial/starter and null for growth. The schema and SQL migrations provide IDs, foreign keys and a nonunique organization/outlet index, not a staff-quota constraint or trigger. Thus a valid sixth trial/starter or twenty-sixth growth create follows the same unconditional insert as the first; concurrent admission is the same missing-check root cause, not a distinct check-then-act race. Lifecycle review: DELETE sets isActive=false/deletedAt; list/count and getById include such rows; PATCH exposes neither isActive nor deletedAt and cannot reactivate staff or change organization. No admission accounting exists to free, retain or reconsume slots. Deleted-row quota semantics are not specified sufficiently to report an independent lifecycle vulnerability. Searches found no alternate production staff insert beyond this repository; seed insertion is not an HTTP admission route. No tenant-reference or staff-role authorization finding is included. No target execution, network or credential access was performed.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": ["staff/createStaff/missing-plan-allocation-enforcement"],
+      "unresolved": ["No approved OS-enforced sandbox is available; actual route/database boundary behavior has not been demonstrated. Any deployment-only staff admission constraint remains unobserved."]
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "staff/createStaff/missing-plan-allocation-enforcement",
+      "title": "Staff creation does not enforce trial, Starter or Growth allocation",
+      "description": "An authenticated organization owner or admin can submit ordinary valid staff creations beyond the PRD allocation: a sixth active staff member on trial/Starter or a twenty-sixth on Growth. The source path persists each record without consulting plan or current allocation. The affected boundary is the operator's paid service entitlement, not another tenant's data. Billing also describes Growth as unlimited through staffLimit=null. Sequential creation suffices; concurrency is not required. Each request creates one persistent row, so this is an entitlement bypass hypothesis, not demonstrated resource amplification or shared-service denial of service. Deletion retains rows; no runtime recovery or automatic quota reconciliation is established.",
+      "claimed_root_cause": "The production staff admission path lacks a server-side staff-allocation policy and any count/reservation. Subscription information loaded during authentication is unused by createStaff; staffRepo.create performs an unconditional insert. Billing has a separate incomplete limit expression that omits Growth's twenty-five allowance. Schema and migrations contain no equivalent database enforcement.",
+      "trace": [
+        {"kind": "entrypoint", "file": "src/app.ts", "line": 84, "scope": "staff router mounts", "description": "The shared router exposes /staff under /api/v1 and /api at lines 91-94."},
+        {"kind": "propagation", "file": "src/modules/staff/staff.routes.ts", "line": 61, "scope": "POST /staff", "description": "Authenticated owner/admin requests are parsed with createStaffSchema and passed to createStaff without a quota middleware."},
+        {"kind": "propagation", "file": "src/modules/staff/staff.schemas.ts", "line": 3, "scope": "createStaffSchema", "description": "A bounded name, enumerated staff role and employment type, optional contact fields, nonnegative salaries and optional outlet UUID form an ordinary accepted input; no cardinality policy is applied."},
+        {"kind": "propagation", "file": "src/modules/staff/staff.service.ts", "line": 21, "scope": "createStaff", "description": "Resolves a target outlet and maps employee fields, then calls staffRepo.create without reading ctx.planCode or current staff allocation."},
+        {"kind": "sink", "file": "src/modules/staff/staff.repo.ts", "line": 115, "scope": "staffRepo.create", "description": "Inserts a new staff row with organizationId and returns it without count, lock, quota reservation or subscription condition."}
+      ],
+      "evidence": [
+        {"file": "PRD.md", "line": 632, "description": "The feature matrix limits trial/Starter staff to five and Growth staff to twenty-five; Pro is unlimited."},
+        {"file": "src/middleware/authenticate.ts", "line": 50, "description": "Loads the organization's subscription and publishes planCode/planStatus at lines 80-81; the staff create service does not use these values."},
+        {"file": "src/middleware/authorize.ts", "line": 10, "description": "The strongest route authorization control restricts organization role but does not enforce allocation."},
+        {"file": "src/modules/billing/billing.service.ts", "line": 31, "description": "Advertises staffLimit=5 for trial/Starter and null otherwise, incorrectly omitting Growth's twenty-five cap; this metadata is not an admission control."},
+        {"file": "src/db/schema/staff.ts", "line": 26, "description": "New staff default active; the only declared table index is the nonunique organization/outlet index at line 32, not a quota constraint."},
+        {"file": "src/db/schema/identity.ts", "line": 107, "description": "Subscription schema contains plan and outlet limit but no staff allocation counter."},
+        {"file": "drizzle/migrations/0000_ambiguous_silver_fox.sql", "line": 442, "description": "Staff DDL contains ordinary columns; foreign keys at lines 873-885 and the index at 1020 do not enforce cardinality. Migration search found no quota trigger/function/policy; subsequent migrations add payroll/inventory constraints and expense fields, not staff admission enforcement."},
+        {"file": "src/modules/staff/staff.repo.ts", "line": 139, "description": "Deletion retains staff with isActive=false and deletedAt set. Listing/counting at lines 14-43 do not exclude retained rows. This does not bypass an existing quota because no quota check exists."},
+        {"file": "src/modules/staff/staff.service.ts", "line": 43, "description": "PATCH maps staff fields and outlet only, not organization, active status or deletedAt; no exposed reactivation path creates a separate quota variant."}
+      ],
+      "blockers": ["Source-only assignment provides no approved sandbox with network isolation, empty allowlisted environment, read-only target/toolchain, scratch-only writes and aggregate CPU/memory/PID/disk/time limits. No route or PostgreSQL fixture was executed.", "Deployed database-only triggers or upstream business admission controls are not observable from this repository; their presence or absence must not be assumed."],
+      "validation_plan": {
+        "local": "In an approved isolated sandbox with dummy PostgreSQL and no external network, provision one valid owner, organization and its own outlet. Submit minimal valid staff bodies such as {fullName:'Quota fixture',role:'cashier'} with that outlet as active context. Starting at five active rows on trial and Starter, test one sixth creation; starting at twenty-five on Growth, test one twenty-sixth. Record HTTP status and persisted active-row count. At four/twenty-four, release exactly two valid create requests together to test atomic admission; do not perform a load test. Compare GET /billing/subscription with the PRD for all plans. Separately delete one dummy staff member, inspect retained row flags and list totals, and test a replacement under an owner-agreed active-versus-total counting policy. No reactivation test is applicable to the current PATCH schema. An eventual fix should centralize plan limits and serialize allocation with insert/deactivation under the same organization-level transaction boundary; verify one-at-limit rejection and exactly one concurrent admission.",
+        "deployment": "The owner should inspect deployed PostgreSQL staff triggers/constraints and ingress admission policy without sending test traffic to a live service. Determine whether any independently enforced staff cap blocks the source path, and document whether inactive/deleted staff consume allocation and how existing over-limit tenants or plan downgrades are handled. No shared-service outage claim is made."
+      }
+    }
+  ],
+  "hardening": [],
+  "uncovered": []
+}

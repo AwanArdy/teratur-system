@@ -1,0 +1,15 @@
+{
+  "run_id": "backend-standard-01addef",
+  "repo": "TERATUR-ID/backend",
+  "target": "/home/ardy/Documents/projek/TERATUR-ID/backend",
+  "source_ref": {"commit":"01addef3622c31cedce58382572573170505844a","dirty":true,"untracked":["docker-compose.yml"]},
+  "profile":"standard",
+  "scope_paths":["src","tests","drizzle","package.json","package-lock.json","docker-compose.yml","README.md","DESIGN.md","PRD.md","drizzle.config.ts","tsconfig.json"],
+  "budget":null,
+  "execution_policy":"sandboxed-source-and-local-only",
+  "selected_companion_files":[],
+  "prior_run_paths":[],
+  "prior_run_status":"Discovery pending; no prior ledger supplied",
+  "shared_file_owners":{"run-metadata.json":"parent","architecture.md":"parent","coverage-ledger.json":"parent","findings.json":"parent","REPORT.md":"parent","FINDINGS-DETAIL.md":"parent","NEEDS-VALIDATION.md":"parent"},
+  "run_status":"in_progress"
+}

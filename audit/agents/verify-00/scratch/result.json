@@ -1,0 +1,120 @@
+{
+  "decision": "needs_validation",
+  "record": {
+    "verdict": "needs_validation",
+    "fingerprint": "auth/credential-delivery/unconditional-secret-logging",
+    "title": "Recovery and verification capabilities are logged outside a development-only guard",
+    "description": "Source inspection confirms unguarded info-level logging of registration OTPs, resent OTPs and full password-reset tokens. The reset path independently issues a capability for an existing account and accepts its hash, subject to expiry and consumption checks, without another identity factor. The hypothesized lower-trust principal is a log reader or downstream log processor lacking authority to reset that user account; the protected state is that user's password and associated account access. Unauthorized disclosure or reset was not reproduced, and neither deployed info-level emission nor such log-reader access is established.",
+    "claimed_root_cause": "The three credential-delivery paths interpolate raw capabilities into logger.info message strings without NODE_ENV or SMTP_URL guards. The shared Pino configuration changes development formatting and honors LOG_LEVEL, but defines no credential redaction. SMTP_URL is declared but not referenced by delivery code. Higher deployed log levels could suppress the messages; this is not unconditional emission.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 97,
+        "scope": "POST /auth/forgot-password",
+        "description": "The anonymous JSON route validates an email and calls forgotPassword; existing-account lookup is required for issuance. Mounted under both /api/v1/auth and /api/auth."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 358,
+        "scope": "reset capability creation",
+        "description": "Generates a random opaque token, hashes it, and awaits storage bound to the existing user with a one-hour expiry before logging."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 365,
+        "scope": "credential-bearing logging",
+        "description": "Passes the raw reset capability and recipient email into logger.info without an environment or SMTP guard; actual emission depends on LOG_LEVEL."
+      },
+      {
+        "kind": "sink",
+        "file": "src/lib/logger.ts",
+        "line": 4,
+        "scope": "pino logger",
+        "description": "The Pino logger honors env.LOG_LEVEL, uses a pretty transport only in development, and configures no redaction or production credential suppression."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "DESIGN.md",
+        "line": 1124,
+        "description": "The stated OTP stdout fallback is development without SMTP, not an unconditional production behavior."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 62,
+        "description": "Initial registration also logs the raw OTP without an environment or delivery-mode guard."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 350,
+        "description": "OTP resend has the same unconditional credential logging."
+      },
+      {
+        "file": "src/config/env.ts",
+        "line": 15,
+        "description": "Default logger level includes info messages."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 369,
+        "description": "The raw reset value is sufficient input to the reset acceptance path; it is hashed and looked up without another user factor."
+      },
+      {
+        "file": "src/app.ts",
+        "line": 67,
+        "description": "The auth router is mounted before any global authentication gate; lines 91-94 expose it at /api/v1 and /api."
+      },
+      {
+        "file": "src/modules/auth/auth.schemas.ts",
+        "line": 55,
+        "description": "Forgot-password requires an email; reset-password requires a nonempty token and an 8-128 character new password, with no additional identity factor."
+      },
+      {
+        "file": "src/modules/auth/auth.routes.ts",
+        "line": 108,
+        "description": "Reset-password is an anonymous route that parses the body and calls resetPassword."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 17,
+        "description": "Account lookup lowercases the submitted email before selecting the existing user."
+      },
+      {
+        "file": "src/modules/auth/auth.repo.ts",
+        "line": 181,
+        "description": "Reset issuance persists the supplied token hash; lookup at line 187 selects by that hash, password update at line 196 selects the stored user ID."
+      },
+      {
+        "file": "src/lib/otp.ts",
+        "line": 15,
+        "description": "Opaque capabilities use 32 random bytes encoded as hex; hashToken uses SHA-256 at line 19. Hashing stored values does not remove the raw value from logging."
+      },
+      {
+        "file": "src/db/schema/identity.ts",
+        "line": 186,
+        "description": "Reset-token records bind a unique token hash to a user with expiration and optional consumed timestamp."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 77,
+        "description": "Registration verification passes reg.userId to a lookup whose email argument is compared against emailOtps.email at auth.repo.ts:50-54. Do not infer working OTP-based account access from OTP logging."
+      },
+      {
+        "file": "src/modules/auth/auth.service.ts",
+        "line": 371,
+        "description": "Reset acceptance rejects missing, consumed or expired tokens, then changes the stored user password, consumes the token and revokes refresh sessions. These controls limit lifetime but do not distinguish an unauthorized holder of the raw logged capability."
+      }
+    ],
+    "blockers": [
+      "Deployed LOG_LEVEL, output transport/filtering, retention, and whether any log reader or downstream processor lacks authority to recover the affected account are unobserved; source alone cannot establish an unauthorized disclosure.",
+      "Target execution is prohibited: no approved OS-enforced sandbox establishes scratch-only writes and aggregate process-tree CPU, memory, PID and disk limits. No production-mode dummy issuance/reset check was run. Promotion allowlist is empty with zero byte limits, so no runtime artifact can be retained as evidence."
+    ],
+    "validation_plan": {
+      "local": "Only after the parent approves a sandbox with no external network, an empty allowlisted environment, read-only target/tools, scratch-only writes and explicit CPU/memory/PID/file/disk/wall-clock limits, use an isolated disposable database and one pre-existing dummy account. Set NODE_ENV=production and LOG_LEVEL=info with dummy signing material; POST a dummy email to /api/v1/auth/forgot-password, inspect captured output for its dummy raw token, then submit that token and a valid dummy new password once to /api/v1/auth/reset-password. Stop after checking that only the dummy password changed. Do not treat mocked persistence as proof of DB acceptance. Register only minimal non-secret pass/fail evidence for trusted parent promotion before execution; never promote raw tokens. Check registration/resend logs separately without claiming OTP verification works. Remove raw capability logging from normal environments, restrict any development delivery fallback to explicit isolated development without SMTP, and regress that production output contains no dummy capabilities.",
+      "deployment": "The owner should inspect effective log level, transport/filtering, retention and reader/processor permissions without supplying live credentials or triggering real-user resets. Determine whether an unauthorized-to-recover principal can access reset-bearing messages within token validity. Use only an owner-created dummy account if a runtime check is needed; report policy and non-secret pass/fail observations rather than log contents."
+    }
+  }
+}
