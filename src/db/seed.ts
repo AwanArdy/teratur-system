@@ -1571,7 +1571,6 @@ export const seed = async () => {
   });
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
   seed()
     .then(async () => {
       await queryClient.end();
@@ -1582,4 +1581,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       await queryClient.end();
       process.exit(1);
     });
-}
