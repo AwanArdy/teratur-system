@@ -32,7 +32,7 @@ import { posRouter } from "./modules/pos/pos.routes.js";
 export const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGINS.split(',') }));
+app.use(cors());
 app.use(requestId);
 app.use(express.json({ limit: '1mb' }));
 app.use(
