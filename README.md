@@ -114,7 +114,100 @@ npm run db:seed
 
 ---
 
-## 7. Menjalankan Server Backend
+## 7. Kredensial Login Akun Demo (Seed Data)
+
+Setelah menjalankan `npm run db:seed`, database akan terisi dengan **8 Outlet**, **4 Owner** (tiap 1 owner mengelola 2 outlet), dan **16 Karyawan** (tiap outlet memiliki 2 karyawan: kasir & barista). Seluruh akun menggunakan password seragam: `password123`.
+
+### 7.1. Akun Pemilik Usaha / Owner (4 Akun)
+
+Setiap Owner memiliki hak akses penuh ke seluruh outlet dalam organisasinya.
+
+| No | Nama Owner | Email | Password | Role | Organisasi | Outlet yang Dimiliki |
+|---|---|---|---|---|---|---|
+| 1 | Budi Santoso | `owner1@teratur.id` | `password123` | `owner` | Kopi Teratur | • Kopi Teratur - Braga<br>• Kopi Teratur - Dago |
+| 2 | Hendra Wijaya | `owner2@teratur.id` | `password123` | `owner` | Seduh Selaras | • Seduh Selaras - Senopati<br>• Seduh Selaras - Kemang |
+| 3 | Anisa Rahmawati | `owner3@teratur.id` | `password123` | `owner` | Rasa Kembara | • Rasa Kembara - Malioboro<br>• Rasa Kembara - Prawirotaman |
+| 4 | I Made Sukadana | `owner4@teratur.id` | `password123` | `owner` | Nusa Rasa Hospitality | • Nusa Rasa - Ubud<br>• Nusa Rasa - Canggu |
+
+### 7.2. Akun Karyawan / Staff Operasional (16 Akun)
+
+Setiap Karyawan ditugaskan secara spesifik pada 1 outlet (login dibatasi hanya untuk outlet penugasannya).
+
+| No | Organisasi | Outlet Penugasan | Nama Karyawan | Email | Password | Peran / Jabatan | Shift |
+|---|---|---|---|---|---|---|---|
+| 1 | Kopi Teratur | Kopi Teratur - Braga | Agus Pratama | `kasir.braga@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 2 | Kopi Teratur | Kopi Teratur - Braga | Dewi Lestari | `barista.braga@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 3 | Kopi Teratur | Kopi Teratur - Dago | Fajar Hidayat | `kasir.dago@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 4 | Kopi Teratur | Kopi Teratur - Dago | Rina Anggraini | `barista.dago@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 5 | Seduh Selaras | Seduh Selaras - Senopati | Dimas Setiawan | `kasir.senopati@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 6 | Seduh Selaras | Seduh Selaras - Senopati | Maya Putri | `barista.senopati@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 7 | Seduh Selaras | Seduh Selaras - Kemang | Rizky Ramadhan | `kasir.kemang@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 8 | Seduh Selaras | Seduh Selaras - Kemang | Sarah Nabila | `barista.kemang@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 9 | Rasa Kembara | Rasa Kembara - Malioboro | Eko Prasetyo | `kasir.malioboro@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 10 | Rasa Kembara | Rasa Kembara - Malioboro | Sri Wahyuni | `barista.malioboro@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 11 | Rasa Kembara | Rasa Kembara - Prawirotaman | Bayu Nugroho | `kasir.prawirotaman@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 12 | Rasa Kembara | Rasa Kembara - Prawirotaman | Tari Wulandari | `barista.prawirotaman@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 13 | Nusa Rasa Hospitality | Nusa Rasa - Ubud | Wayan Darma | `kasir.ubud@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 14 | Nusa Rasa Hospitality | Nusa Rasa - Ubud | Ni Kadek Ayu | `barista.ubud@teratur.id` | `password123` | Barista (`barista`) | Sore |
+| 15 | Nusa Rasa Hospitality | Nusa Rasa - Canggu | Ketut Adi | `kasir.canggu@teratur.id` | `password123` | Kasir (`cashier`) | Pagi |
+| 16 | Nusa Rasa Hospitality | Nusa Rasa - Canggu | Ni Luh Putu | `barista.canggu@teratur.id` | `password123` | Barista (`barista`) | Sore |
+
+### 7.3. Ringkasan Menu Tiap Outlet (Menu Berbeda per Outlet)
+
+Setiap outlet memiliki variasi menu minuman signature/racikan (dengan resep BOM dan bahan baku unik) serta pastry/snack yang berbeda:
+
+1. **Kopi Teratur - Braga (Bandung)**
+   - *Signature & Kopi*: Es Kopi Susu Braga (Rp 22.000), Braga Cold Brew Heritage 1L (Rp 85.000), Piccolo Heritage Braga (Rp 26.000)
+   - *Pastry & Bakery*: Croissant Butter Malabar (Rp 24.000), Toast Roti Srikaya Klasik (Rp 18.000)
+2. **Kopi Teratur - Dago (Bandung)**
+   - *Specialty & Fusion*: Dago Mountain Latte (Rp 28.000), Uji Matcha Espresso Dago (Rp 32.000), Iced Black Coffee Dago (Rp 20.000)
+   - *Pastry & Bakery*: Pain au Chocolat Dago (Rp 27.000), Salted Caramel Fudge Brownie (Rp 25.000)
+3. **Seduh Selaras - Senopati (Jakarta)**
+   - *Signature & Espresso*: Spanish Latte Senopati (Rp 35.000), Salted Caramel Macchiato Senopati (Rp 38.000), Velvet Flat White Senopati (Rp 33.000)
+   - *Artisan Pastry*: Truffle Mushroom Croissant (Rp 38.000), Cinnamon Roll Senopati Glaze (Rp 28.000)
+4. **Seduh Selaras - Kemang (Jakarta)**
+   - *Plant-Based & Tea*: Kemang Oat Pandan Latte (Rp 36.000), Wild Berry Iced Tea Kemang (Rp 28.000), Earl Grey Milk Tea Macchiato (Rp 30.000)
+   - *Pastry & Snack*: Strawberry Cream Cheese Danish (Rp 32.000), Truffle Parmesan Potato Wedges (Rp 30.000)
+5. **Rasa Kembara - Malioboro (Yogyakarta)**
+   - *Tradisional & Signature*: Kopi Joss Aren Merapi (Rp 18.000), Es Kopi Klepon Malioboro (Rp 22.000), Teh Tarik Malioboro Klasik (Rp 16.000)
+   - *Kudapan Tradisional*: Bakpia Crispy Kacang Hijau (Rp 15.000), Singkong Keju Merekah Malioboro (Rp 14.000)
+6. **Rasa Kembara - Prawirotaman (Yogyakarta)**
+   - *Manual Brew & Fizz*: Manual Brew V60 Arabika Menoreh (Rp 25.000), Cascara Honey Sparkle Prawiro (Rp 22.000), Iced Hazelnut Menoreh Latte (Rp 26.000)
+   - *Bakery & Snack*: Banana Bread Slice Prawirotaman (Rp 18.000), Almond Fruit Tart Prawirotaman (Rp 22.000)
+7. **Nusa Rasa - Ubud (Bali)**
+   - *Botanical & Wellness*: Golden Turmeric Botanical Latte (Rp 32.000), Coconut Cold Brew Kintamani (Rp 35.000), Butterfly Pea Flower Tea Ubud (Rp 24.000)
+   - *Healthy Brunch*: Tropical Dragonfruit Chia Bowl (Rp 45.000), Ubud Avocado Sourdough Toast (Rp 40.000)
+8. **Nusa Rasa - Canggu (Bali)**
+   - *Coastal Specialty*: Sea Salt Toffee Flat White Canggu (Rp 38.000), Canggu Iced Dark Chocolate 70% (Rp 34.000), Canggu Double Espresso on the Rock (Rp 26.000)
+   - *Coastal Bakery*: Maple Glaze Butter Croffle (Rp 30.000), Smoked Beef Cream Cheese Bagel (Rp 48.000)
+
+### 7.4. Contoh Pengujian Login via cURL
+
+Contoh login sebagai Owner 1:
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "owner1@teratur.id",
+    "password": "password123",
+    "rememberMe": false
+  }'
+```
+
+Contoh login sebagai Karyawan Kasir Outlet Braga:
+```bash
+curl -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "kasir.braga@teratur.id",
+    "password": "password123",
+    "rememberMe": false
+  }'
+```
+
+---
+
+## 8. Menjalankan Server Backend
 
 ### Mode Development (dengan hot-reload):
 ```bash
@@ -130,7 +223,7 @@ npm start
 
 ---
 
-## 8. Perintah Tambahan (Drizzle & Testing)
+## 9. Perintah Tambahan (Drizzle & Testing)
 
 | Perintah | Deskripsi |
 |---|---|

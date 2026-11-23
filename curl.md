@@ -128,14 +128,14 @@ Akun demo seed (`SEED_DEMO=true`, bukan production):
 
 | Field | Nilai |
 |---|---|
-| Email | `kasir@teratur.id` |
+| Email | `owner1@teratur.id` |
 | Password | `password123` |
 | Nama | Budi Santoso |
 | Peran org | `owner` |
 | Paket | `pro` / `active` |
 | Organisasi | Kopi Teratur |
-| Outlet | Kopi Teratur - Outlet Pusat |
-| Gudang | Gudang Utama (`WH-01`) |
+| Outlet | Kopi Teratur - Braga |
+| Gudang | Gudang Utama Braga (`WH-BRG-01`) |
 
 Owner boleh mengakses endpoint yang mengizinkan `owner`/`admin` **dan** endpoint staf (`manager`, `cashier`, dan seterusnya), karena middleware `authorizeStaff` meloloskan owner dan admin.
 
@@ -147,7 +147,7 @@ curl -sS -D - -o /tmp/login.json \
   -H "X-Request-Id: req-demo" \
   -X POST "$BASE/auth/login" \
   -d '{
-    "email": "kasir@teratur.id",
+    "email": "owner1@teratur.id",
     "password": "password123",
     "rememberMe": false
   }'
@@ -242,7 +242,7 @@ curl -sS -o /tmp/logout.body -w "HTTP %{http_code}\n" \
 ```bash
 curl -sS -H "Content-Type: application/json" -H "X-Request-Id: req-demo" \
   -X POST "$BASE/auth/forgot-password" \
-  -d '{"email":"kasir@teratur.id"}' | jq .
+  -d '{"email":"owner1@teratur.id"}' | jq .
 ```
 
 **Harusnya `202`**, baik email ada maupun tidak (anti enumerasi):
@@ -422,7 +422,7 @@ curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" -H "X-Request-Id: req-demo" \
   "data": {
     "id": "<uuid>",
     "fullName": "Budi Santoso",
-    "email": "kasir@teratur.id",
+    "email": "owner1@teratur.id",
     "phone": "081234567890",
     "jobTitle": "Owner / Kasir",
     "avatarUrl": null,
@@ -493,7 +493,7 @@ Sesi milik user lain atau id yang tidak ada **harusnya `404`** `NOT_FOUND`.
 
 ### POST `/me/disable`
 
-Menonaktifkan akun yang sedang login dan mencabut semua sesinya. Jangan dijalankan pada `kasir@teratur.id`.
+Menonaktifkan akun yang sedang login dan mencabut semua sesinya. Jangan dijalankan pada `owner1@teratur.id`.
 
 ```bash
 curl -sS -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
@@ -1721,7 +1721,7 @@ export STAFF_ID="$(jq -r '.data[0].id' /tmp/staff.json)"
       "name": "Budi Santoso",
       "staffRole": "cashier",
       "phone": "081234567890",
-      "email": "kasir@teratur.id",
+      "email": "owner1@teratur.id",
       "employmentType": "full_time",
       "joinedOn": "2026-01-01",
       "baseSalaryIdr": 3500000,
@@ -2163,4 +2163,4 @@ Request tanpa `Authorization: Bearer` ke route ber-`authenticate` **harusnya `40
 2. Baca organisasi, outlet, gudang, billing, supplier, bahan, produk, inventori, dashboard.
 3. Buka shift, buat satu penjualan POS, baca struk, tutup shift.
 4. Buat gudang kedua, transfer, opname, waste hanya jika Anda siap mengubah saldo seed.
-5. Jangan jalankan `change-password`, `reset-password`, `POST /me/disable`, atau `DELETE` pada user, outlet, bahan resep, dan staf Budi Santoso bila sesi berikutnya masih memakai `kasir@teratur.id` / `password123`.
+5. Jangan jalankan `change-password`, `reset-password`, `POST /me/disable`, atau `DELETE` pada user, outlet, bahan resep, dan staf Budi Santoso bila sesi berikutnya masih memakai `owner1@teratur.id` / `password123`.
