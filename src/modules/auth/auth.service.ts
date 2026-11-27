@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import { authRepo } from "./auth.repo.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
@@ -24,6 +24,7 @@ import {
   registrations, 
   subscriptions 
 } from "../../db/schema/identity.js";
+import { staff } from "../../db/schema/staff.js";
 
 export const authService = {
   async registerStart(body: {
@@ -217,10 +218,43 @@ export const authService = {
       throw new HttpError(404, 'NOT_FOUND', 'Organisasi tidak ditemukan');
     }
 
-    const [outlet] = await db
+    // Outlet default harus mengikuti penugasan staf. Sebelumnya query mengambil
+    // outlet pertama organisasi, sehingga staf di outlet kedua (mis. Kemang)
+    // menerima X-Outlet-Id yang bukan haknya dan terkena OUTLET_REQUIRED saat
+    // membuka shift.
+    const [staffMember] = await db
       .select()
-      .from(outlets)
-      .where(eq(outlets.organizationId, orgId));
+      .from(staff)
+      .where(
+        and(
+          eq(staff.userId, user.id),
+          eq(staff.organizationId, orgId),
+          isNull(staff.deletedAt)
+        )
+      );
+
+    const preferredOutletId = staffMember?.outletId || member.defaultOutletId;
+
+    let [outlet] = preferredOutletId
+      ? await db
+          .select()
+          .from(outlets)
+          .where(
+            and(
+              eq(outlets.id, preferredOutletId),
+              eq(outlets.organizationId, orgId),
+              isNull(outlets.deletedAt)
+            )
+          )
+      : [];
+
+    if (!outlet) {
+      [outlet] = await db
+        .select()
+        .from(outlets)
+        .where(and(eq(outlets.organizationId, orgId), isNull(outlets.deletedAt)))
+        .orderBy(outlets.createdAt);
+    }
 
     const [sub] = await db
       .select()
